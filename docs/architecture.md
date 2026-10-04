@@ -58,3 +58,7 @@ QEMU's full Meson configuration.
 
 Preparation is content-addressed by the pins, patches, overlays and preparation
 script. Keep editable source in this repository, not the generated tree.
+
+Environment setup uses the repository-local west manifest, module Python package
+metadata and the official SDK installer. Make wraps west build and west twister.
+See [setup](setup.md) for the managed and native command paths.

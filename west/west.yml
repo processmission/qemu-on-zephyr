@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+manifest:
+  version: "1.2"
+  projects:
+    - name: qemu
+      url: https://github.com/qemu/qemu.git
+      revision: 1df256f5968e9f7c3c4533a1383b071c044a36d6
+      path: upstream/qemu
+      clone-depth: 1
+    - name: zephyr
+      url: https://github.com/zephyrproject-rtos/zephyr.git
+      revision: ba25413e5b6b2661a71db24888f6b89274f1480d
+      path: upstream/zephyr
+      clone-depth: 1
+      west-commands: scripts/west-commands.yml
+    - name: dtc
+      url: https://gitlab.com/qemu-project/dtc.git
+      revision: b6910bec11614980a21e46fbccc35934b671bd81
+      path: upstream/dtc
+      clone-depth: 1
+    - name: zlib
+      url: https://github.com/madler/zlib.git
+      revision: 51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf
+      path: upstream/zlib
+      clone-depth: 1
+  self:
+    path: .

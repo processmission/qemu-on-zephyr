@@ -5,7 +5,6 @@
 import argparse
 import fcntl
 import hashlib
-import json
 import os
 from pathlib import Path
 import shutil
@@ -14,11 +13,17 @@ import sys
 import tempfile
 import urllib.request
 
+import yaml
+
+from environment import command_env, qemu_path
+
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
 SOURCES = BUILD / "sources"
 DOWNLOADS = ROOT / "downloads"
-PINS = json.loads((ROOT / "dependencies.json").read_text())
+MANIFEST = ROOT / "west/west.yml"
+PROJECTS = yaml.safe_load(MANIFEST.read_text())["manifest"]["projects"]
+PINS = {project["name"]: project["revision"] for project in PROJECTS}
 ASSETS = {
     "tuxrun-arm64-Image": (
         "https://storage.tuxboot.com/buildroot/20241119/arm64/Image",
@@ -36,9 +41,44 @@ def run(*command, **kwargs):
     return subprocess.run(command, cwd=ROOT, check=True, **kwargs)
 
 
+def require_clean_upstream(repo):
+    # These also work for an unborn HEAD left by an interrupted fetch.
+    run("git", "-C", str(repo), "diff", "--exit-code", "--")
+    run("git", "-C", str(repo), "diff", "--cached", "--exit-code", "--")
+
+
 def initialize():
-    run("git", "submodule", "update", "--init", "--depth", "1",
-        *(f"upstream/{name}" for name in PINS))
+    env = command_env(require_sdk=False)
+    west = [sys.executable, "-m", "west"]
+    if not (ROOT / ".west/config").exists():
+        run(*west, "init", "-l", "west", env=env)
+    else:
+        path = run(*west, "config", "--local", "manifest.path", env=env,
+                   capture_output=True, text=True).stdout.strip()
+        manifest = run(*west, "config", "--local", "manifest.file", env=env,
+                       capture_output=True, text=True).stdout.strip()
+        if (path, manifest) not in (("west", "west.yml"), (".", "west/west.yml")):
+            raise RuntimeError("Existing .west uses another manifest; refusing to replace it")
+    run(*west, "config", "--local", "manifest.path", ".", env=env)
+    run(*west, "config", "--local", "manifest.file", "west/west.yml", env=env)
+    run(*west, "config", "--local", "update.narrow", "true", env=env)
+    # Never update a developer's modified upstream checkout implicitly.
+    for name in PINS:
+        repo = ROOT / "upstream" / name
+        if (repo / ".git").exists():
+            require_clean_upstream(repo)
+    run(*west, "update", env=env)
+    # Register existing west checkouts as Git submodules without moving their
+    # .git directories (directory renames can fail on layered filesystems).
+    run("git", "submodule", "init")
+    configure_west(env)
+
+
+def configure_west(env=None):
+    env = env or command_env(require_sdk=False)
+    base = "build/sources/zephyr" if (SOURCES / "zephyr").exists() else "upstream/zephyr"
+    run(sys.executable, "-m", "west", "config", "--local", "zephyr.base", base, env=env)
+    run(sys.executable, "-m", "west", "config", "--local", "zephyr.base-prefer", "configfile", env=env)
 
 
 def digest(path):
@@ -53,7 +93,8 @@ def prepare():
 
 
 def prepare_locked():
-    if any(not (ROOT / "upstream" / name / ".git").exists() for name in PINS):
+    if not (ROOT / ".west/config").exists() or any(
+            not (ROOT / "upstream" / name / ".git").exists() for name in PINS):
         initialize()
     for name, revision in PINS.items():
         repo = ROOT / "upstream" / name
@@ -65,7 +106,7 @@ def prepare_locked():
             stdout=subprocess.DEVNULL)
 
     fingerprint = hashlib.sha256()
-    inputs = [ROOT / "dependencies.json", Path(__file__).resolve()]
+    inputs = [MANIFEST, Path(__file__).resolve()]
     for directory in ("src", "patches"):
         inputs.extend(p for p in sorted((ROOT / directory).rglob("*")) if p.is_file())
     for path in inputs:
@@ -74,6 +115,7 @@ def prepare_locked():
     signature = fingerprint.hexdigest()
     stamp = SOURCES / ".prepared"
     if stamp.exists() and stamp.read_text().strip() == signature:
+        configure_west()
         print("Prepared sources are current.", flush=True)
         return
 
@@ -100,6 +142,7 @@ def prepare_locked():
             shutil.rmtree(SOURCES)
         staging.rename(SOURCES)
     print(f"Prepared patched sources: {SOURCES}", flush=True)
+    configure_west()
 
 
 def assets():
@@ -129,21 +172,31 @@ def build(profile="linux"):
         assets()
     app = {"linux": "apps/qemu_linux", "native-probe": "apps/qemu_linux",
            "probe": "apps/qemu_probe", "payload": "tests/payload/app"}[profile]
-    env = dict(os.environ, ZEPHYR_BASE=str(SOURCES / "zephyr"))
-    command = ["cmake", "-S", str(ROOT / app), "-B", str(BUILD / profile), "-G", "Ninja",
-               "-DBOARD=qemu_cortex_a53", f"-DPython3_EXECUTABLE={sys.executable}",
-               f"-DZEPHYR_BASE={SOURCES / 'zephyr'}", f"-DZEPHYR_MODULES={ROOT}"]
+    env = command_env()
+    command = [sys.executable, "-m", "west", "build", "-b", "qemu_cortex_a53",
+               "-d", str(BUILD / profile), str(ROOT / app), "--",
+               f"-DPython3_EXECUTABLE={sys.executable}", f"-DZEPHYR_MODULES={ROOT}",
+               f"-DZEPHYR_BASE={SOURCES / 'zephyr'}",
+               f"-DZEPHYR_SDK_INSTALL_DIR={env['ZEPHYR_SDK_INSTALL_DIR']}",
+               f"-DBUILD_VERSION={PINS['zephyr'][:12]}-qoz"]
     if profile == "native-probe":
         command.append("-DEXTRA_CONF_FILE=native-probe.conf")
-    if not (BUILD / profile / "CMakeCache.txt").exists():
-        run(*command, env=env)
-    run("cmake", "--build", str(BUILD / profile), "--parallel", os.environ.get("JOBS", "8"))
+    env["CMAKE_BUILD_PARALLEL_LEVEL"] = os.environ.get("JOBS", "8")
+    # Native west owns configure/build decisions. Reconfigure on an SDK or Python
+    # change, otherwise keep its incremental build path.
+    cache = BUILD / profile / "CMakeCache.txt"
+    signature = "\n".join((str(sys.executable), env["ZEPHYR_SDK_INSTALL_DIR"], PINS["zephyr"]))
+    stamp = BUILD / profile / ".qoz-config"
+    if cache.exists() and stamp.exists() and stamp.read_text() == signature:
+        command = command[:command.index("--")]
+    run(*command, env=env)
+    stamp.write_text(signature)
 
 
 def qemu_command(profile="linux", interactive=False):
     machine = "virt,gic-version=3" if profile == "payload" else (
         "virt,virtualization=on,secure=off,gic-version=3")
-    command = [os.environ.get("QEMU_SYSTEM_AARCH64", "qemu-system-aarch64"),
+    command = [qemu_path(),
                "-machine", machine, "-accel", "tcg", "-cpu", "cortex-a53",
                "-m", "128M" if profile in ("probe", "payload") else "512M", "-smp", "1",
                "-display", "none", "-monitor", "none"]
@@ -180,8 +233,8 @@ def regression(profile):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("init", "prepare", "assets", "build", "run",
-                                         "probe", "native-probe", "test-payload", "clean"))
+    parser.add_argument("action", choices=("init", "prepare", "assets", "build", "run", "check",
+                                         "probe", "native-probe", "test-payload", "test-arch", "clean"))
     action = parser.parse_args().action
     if action == "init":
         initialize()
@@ -196,6 +249,17 @@ def main():
             os.execvp(qemu_command(profile, True)[0], qemu_command(profile, True))
     elif action in ("probe", "test-payload"):
         regression("probe" if action == "probe" else "payload")
+    elif action == "check":
+        build()
+        run(sys.executable, "apps/qemu_linux/check.py", "--no-build", env=command_env())
+    elif action == "test-arch":
+        prepare()
+        run(sys.executable, "-m", "west", "twister", "-p", "qemu_cortex_a53",
+            "-T", str(SOURCES / "zephyr/tests/arch/arm64/arm64_el2"),
+            "-T", str(SOURCES / "zephyr/tests/arch/arm64/fpu_sharing"),
+            "-T", str(SOURCES / "zephyr/tests/subsys/virtualization/zhv"),
+            "--outdir", str(BUILD / "twister"), "--inline-logs", "-j", os.environ.get("JOBS", "8"),
+            env=command_env())
     elif action == "clean" and BUILD.exists():
         shutil.rmtree(BUILD)
 

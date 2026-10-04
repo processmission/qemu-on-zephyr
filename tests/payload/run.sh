@@ -6,4 +6,4 @@ if [[ $# != 0 ]]; then
     echo 'Unexpected arguments' >&2
     exit 2
 fi
-exec "${PYTHON:-python3}" "${project_root}/scripts/project.py" test-payload
+exec "${PYTHON:-${project_root}/.venv/bin/python}" "${project_root}/scripts/project.py" test-payload

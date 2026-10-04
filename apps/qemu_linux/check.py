@@ -13,6 +13,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from environment import qemu_path
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -28,7 +31,7 @@ def main():
 
     logfile = workspace / "build/linux-validation.log"
     command = [
-        os.environ.get("QEMU_SYSTEM_AARCH64", "qemu-system-aarch64"),
+        qemu_path(),
         "-machine", "virt,virtualization=on,secure=off,gic-version=3",
         "-accel", "tcg",
         "-cpu", "cortex-a53", "-m", "512M", "-smp", "1",

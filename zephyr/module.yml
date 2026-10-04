@@ -3,3 +3,7 @@ name: qemu_on_zephyr
 build:
   cmake: zephyr
   kconfig: zephyr/Kconfig
+package-managers:
+  pip:
+    requirement-files:
+      - requirements.txt

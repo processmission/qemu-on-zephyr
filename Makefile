@@ -1,39 +1,45 @@
 # SPDX-License-Identifier: Apache-2.0
 .DEFAULT_GOAL := help
-PYTHON ?= python3
+BOOTSTRAP_PYTHON ?= python3
+PYTHON ?= $(CURDIR)/.venv/bin/python
 JOBS ?= 8
 export JOBS
 
-.PHONY: help init prepare assets build run check probe native-probe test-glib test-payload test-arch clean
+.PHONY: help host-deps setup doctor init update prepare assets build run check probe native-probe test-glib test-payload test-arch test-tools clean check-env
 help:
-	@echo 'make init          Initialize pinned upstream submodules (no recursive QEMU dependencies)'
-	@echo 'make prepare       Generate patched source trees under build/sources'
-	@echo 'make assets        Download and verify the Linux guest assets'
-	@echo 'make build         Build Zephyr with the QEMU module'
-	@echo 'make run           Build and enter the guest Linux serial shell (Ctrl-a x exits)'
-	@echo 'make check         Build and verify Linux boot, IRQs, EL0/MMU and host scheduling'
-	@echo 'make probe         Run the standalone QOM/PL011 regression'
-	@echo 'make native-probe  Run the native accelerator diagnostic'
-	@echo 'make test-glib     Compare the GLib subset against host GLib'
-	@echo 'make test-payload  Run the read-only filesystem regression'
-	@echo 'make test-arch     Run EL1/EL2, FPU and native executor tests (requires Twister dependencies)'
-	@echo 'make clean         Remove generated builds; retain downloaded guest assets'
+	@echo 'First use: make host-deps (if needed), make setup, make run'
+	@echo 'make setup         Prepare .venv, west workspace, SDK and verified guest assets'
+	@echo 'make doctor        Check host tools, SDK, Python packages and QEMU'
+	@echo 'make update        Synchronize the four pinned upstream repositories with west'
+	@echo 'make build / run   Build / start Linux on QEMU on Zephyr'
+	@echo 'make check         Verify Linux, IRQs, EL0/MMU and host scheduling'
+	@echo 'make probe         QOM/PL011 regression'
+	@echo 'make native-probe  Native accelerator diagnostic'
+	@echo 'make test-payload  Read-only filesystem regression'
+	@echo 'make test-glib     Host GLib differential regression'
+	@echo 'make test-arch     EL1/EL2, FPU and executor regressions through west twister'
+	@echo 'make test-tools    Workspace setup and configuration tests'
+	@echo 'make clean         Delete generated builds, retaining SDK, venv and assets'
 
-init prepare assets build run probe native-probe clean:
-	$(PYTHON) scripts/project.py $@
+host-deps:
+	bash scripts/install-host-deps.sh
 
-check: build
-	$(PYTHON) apps/qemu_linux/check.py --no-build
+setup:
+	$(BOOTSTRAP_PYTHON) scripts/setup.py
+
+doctor:
+	$(BOOTSTRAP_PYTHON) scripts/setup.py --doctor
+
+check-env:
+	@test -x "$(PYTHON)" -a -x "$(CURDIR)/.venv/bin/west" || { echo 'Run make setup first.' >&2; exit 1; }
+
+init prepare assets build run check probe native-probe test-payload test-arch clean: | check-env
+	"$(PYTHON)" scripts/project.py $@
+
+update: init
 
 test-glib:
 	bash tests/glib/run_diff_test.sh
 
-test-payload:
-	$(PYTHON) scripts/project.py test-payload
-
-test-arch: prepare
-	ZEPHYR_BASE="$(CURDIR)/build/sources/zephyr" $(PYTHON) build/sources/zephyr/scripts/twister \
-		-p qemu_cortex_a53 -T build/sources/zephyr/tests/arch/arm64/arm64_el2 \
-		-T build/sources/zephyr/tests/arch/arm64/fpu_sharing \
-		-T build/sources/zephyr/tests/subsys/virtualization/zhv \
-		--outdir build/twister --inline-logs -j $(JOBS)
+test-tools: | check-env
+	"$(PYTHON)" -m unittest discover -s tests/tools -v

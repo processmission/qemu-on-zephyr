@@ -1,112 +1,212 @@
+<div align="center">
+
 # QEMU on Zephyr
 
-[中文说明](README.zh-CN.md)
+### QEMU's device models. Zephyr's runtime. Linux as the guest.
 
-Run QEMU's ARM machine and device models inside Zephyr, with a native ARM64
-virtualization accelerator executing a Linux guest. Zephyr runs at EL2; Linux
-runs at EL1/EL0. The development platform is an outer QEMU ARM `virt` machine
-using TCG, so an ARM host or KVM is not required.
+[![Build and boot](https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml/badge.svg)](https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml)
+![Architecture](https://img.shields.io/badge/architecture-AArch64-2563eb)
+![SDK](https://img.shields.io/badge/Zephyr_SDK-1.0.1-7c3aed)
+![Status](https://img.shields.io/badge/status-experimental-f59e0b)
 
-This repository is a Zephyr module and a reproducible integration workspace.
-Upstream repositories stay unmodified. Local source overlays and patches are
-versioned here; patched build trees are generated under `build/sources/`.
+An out-of-tree Zephyr module hosting QEMU's ARM machine and device models,
+with a native EL2 executor running an ARM64 Linux guest.
+
+[Quick start](#quick-start) · [Architecture](#architecture) · [Development](CONTRIBUTING.md) · [中文](README.zh-CN.md)
+
+</div>
+
+---
+
+| **Real QEMU models** | **Native guest execution** | **Repeatable workspace** |
+| :--- | :--- | :--- |
+| ARM CPU, QOM/qdev, MemoryRegion, PL011, software GICv3 and the original Linux loader. | A `zephyr` accelerator connects QEMU to Zephyr's ARM64 EL2 executor. No inner TCG loop or KVM dependency. | Pinned upstream sources, local patches, automatic SDK/Python setup, and a Linux boot acceptance test. |
 
 ## Quick start
 
-The supported development environment is Linux. Install Git, Make, Python 3,
-CMake **3.28 or newer**, Ninja, GNU patch, tar, a C compiler, and
-`qemu-system-aarch64`. Install **Zephyr SDK 1.0.1**, including its
-`aarch64-zephyr-elf` toolchain. The tested outer QEMU version is **10.2.2**.
-
-After cloning this repository:
+**Start with Linux and Python 3.12+.** Ubuntu 24.04 is the reference setup.
+No ARM board or host KVM is required: the development host runs an outer
+QEMU instance using TCG.
 
 ```sh
+git clone https://github.com/processmission/qemu-on-zephyr.git
 cd qemu-on-zephyr
-make init
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r upstream/zephyr/scripts/requirements-base.txt
-export ZEPHYR_SDK_INSTALL_DIR=/path/to/zephyr-sdk-1.0.1
+
+# Fresh host: install system packages (uses sudo outside a root shell).
+bash scripts/install-host-deps.sh
+
+# Set up local tools, upstream sources, SDK and verified guest assets.
+make setup
+
+# Build and enter the Linux guest shell.
 make run
 ```
 
-Use a regular clone followed by `make init`. Recursive submodule initialization
-is unnecessary: QEMU's unrelated firmware submodules are not used. The four
-direct submodules pin QEMU, Zephyr, libfdt/dtc and zlib to exact commits.
+**No venv activation or manual SDK export is needed for Make.**
+Use **Ctrl-a, then x** to exit outer QEMU. Guest `poweroff -f` leaves the Zephyr
+host running.
 
-`make run` prepares sources, fetches and SHA256-verifies the guest Image and
-initramfs, builds `build/linux/zephyr/zephyr.elf`, and boots it in outer QEMU.
-At the Linux shell, try:
+<details>
+<summary><strong>What does <code>make setup</code> install?</strong></summary>
+
+1. Creates `.venv/` with pinned west, CMake and Ninja versions.
+2. Creates a **repository-local** west workspace and runs `west update` for
+   QEMU, Zephyr, dtc/libfdt and zlib. No unrelated HALs or firmware are fetched.
+3. Uses `west packages` to install the module's Python build/test requirements.
+4. Applies local patches and source overlays to disposable build trees.
+5. Reuses **Zephyr SDK 1.0.1**, or invokes `west sdk install` for the
+   **AArch64 GNU toolchain and host tools**, including QEMU.
+6. Downloads the Linux Image and initramfs and verifies their SHA256 hashes.
+
+SDK selection is saved locally. Downloaded SDKs live in `.tools/`; an already
+registered SDK can be reused. Setup never invokes sudo or installs Python
+packages globally. It can be rerun after an interrupted setup.
+
+</details>
+
+<details>
+<summary><strong>Already have an SDK, or prefer native west commands?</strong></summary>
 
 ```sh
-uname -a
-mount -t proc proc /proc
-cat /proc/interrupts
-sleep 1
+ZEPHYR_SDK_INSTALL_DIR=/path/to/zephyr-sdk-1.0.1 make setup
+
+# Optional: open a shell configured for native west commands.
+. .tools/env.sh
+west list
+west update
+make prepare
+west build -b qemu_cortex_a53 -d build/linux apps/qemu_linux
+make run
 ```
 
-Exit the outer QEMU with **Ctrl-a, then x**. `poweroff -f` shuts down the guest;
-the Zephyr host deliberately keeps running.
+`west/west.yml` is the source revision manifest. Upstream checkouts also remain
+Git submodules, so Git records their exact versions. See [setup details](docs/setup.md)
+for initialization, offline use and troubleshooting.
 
-```sh
-make build          # Compile only
-make check          # End-to-end automated acceptance; stops QEMU afterward
-make probe          # Real QOM/PL011 regression
-make native-probe   # Native accelerator diagnostic, without starting Linux
-make test-payload   # Read-only payload filesystem regression
-make test-glib      # Host GLib differential test (requires pkg-config + GLib headers)
-make test-arch      # EL1/EL2, FPU, executor tests (pip install -r tests/requirements.txt)
-make clean          # Remove generated sources/builds, retain downloaded assets
-```
+</details>
 
-Use `JOBS=16` to change build parallelism, `PYTHON=/path/to/python` to select
-Python, and `QEMU_SYSTEM_AARCH64=/path/to/qemu-system-aarch64` to select outer
-QEMU. No global `west init`, `west update`, or Python package installation is
-performed by Make. Network access is needed for the first submodule and asset
-fetch; subsequent builds can run offline.
+## See it run
 
-## Repository layout
-
-| Path | Purpose |
-| --- | --- |
-| `zephyr/` | Module metadata, Kconfig and explicit QEMU compilation source list |
-| `src/qemu/` | New QEMU accelerator, ARM adapter, OS/GLib/filesystem/console adapters |
-| `src/zephyr/` | New native executor, public interface and architecture tests |
-| `patches/qemu/` | Changes to existing upstream QEMU files |
-| `patches/zephyr/` | Changes to existing upstream Zephyr files for EL2/FPU support |
-| `upstream/` | Pristine Git submodules, pinned by Git and `dependencies.json` |
-| `apps/qemu_linux/` | Linux application and end-to-end acceptance checker |
-| `apps/qemu_probe/` | Standalone device-model regression |
-| `tests/` | GLib and payload filesystem tests |
-| `scripts/project.py` | Preparation, asset verification, build and run orchestration |
-| `build/` | Disposable generated sources, ELF files, generated code and test logs |
-| `downloads/` | Verified guest assets, excluded from Git |
-
-## Architecture and current scope
+The serial console identifies the host and the inner QEMU machine:
 
 ```text
-Outer QEMU: virt / Cortex-A53 / GICv3 / 512 MiB / TCG
-  Zephyr EL2
-    QEMU module: QOM + ARM CPU + MemoryRegion + PL011 + software GICv3
-      zephyr accelerator -> zhv executor -> Linux EL1/EL0
-    Independent Zephyr threads, timers and UART driver
+QEMU Linux host EL2
+QEMU machine=zephyr-virt-machine cpu=cortex-a53-arm-cpu accel=zephyr-accel (Zephyr) RAM=256MiB
+...
+Run /bin/sh as init process
+~ # uname -m
+aarch64
 ```
 
-The inner QEMU uses its original ARM Linux loader and device implementations.
-It has no TCG execution loop or KVM dependency. Guest RAM is shared between
-QEMU's MemoryRegion and the executor's Stage-2 mapping. A single model thread
-owns QEMU state; host IRQs queue input and kick that thread.
+`make check` drives that shell and checks working serial input, timer IRQ growth,
+native EL0/MMU execution, host scheduling while the guest is busy, and host
+survival after guest poweroff.
 
-The tested profile is **one VM, one Cortex-A53 vCPU, 256 MiB guest RAM, PL011,
-software GICv3, Linux 6.4.16 and an initramfs shell**. Physical ARM boards, SMP,
-multiple VMs, storage/network backends, migration, guest EL2/EL3, and VM
-restart/hotplug are not implemented or validated by this profile. This is an
-experimental integration, not a production isolation boundary.
+## Architecture
 
-`make check` verifies serial input, Linux identity, increasing timer IRQ counts,
-native EL0/MMU execution, host scheduling while the guest spins, and host
-survival after guest poweroff. Its transcript is `build/linux-validation.log`.
+```mermaid
+flowchart TB
+    host["Linux development host · x86_64 / AArch64"]
+    host --> outer["Outer QEMU · ARM virt · TCG · 512 MiB"]
+    subgraph platform["Emulated ARM platform"]
+        subgraph el2["Zephyr host · EL2"]
+            app["Application / POSIX worker"]
+            models["QEMU module<br/>ARM CPU · QOM/qdev · MemoryRegion<br/>PL011 · software GICv3 · Linux loader"]
+            accel["QEMU zephyr accelerator"]
+            executor["zhv executor<br/>Stage-2 · context switch · traps"]
+            kernel["Zephyr scheduler · timers · UART driver"]
+            app --> models --> accel --> executor
+            kernel -->|"queued input / kicks"| models
+        end
+        guest["Linux guest<br/>kernel at EL1 · userspace at EL0"]
+        executor <-->|"guest entry / native exits"| guest
+        guest -.->|"MMIO / trapped registers"| models
+    end
+    outer --> platform
+```
 
-See [architecture](docs/architecture.md), [development](CONTRIBUTING.md),
-[guest assets](docs/guest-assets.md), and [licenses](LICENSE.md).
-The packaged workspace's validation results are recorded in [validation](docs/validation.md).
+**There are two QEMUs.** The outer executable emulates the development hardware
+and loads `zephyr.elf`. The inner QEMU is compiled into that ELF: it creates
+the guest machine and loads Linux. Guest instructions follow the ARM
+virtualization path through `zephyr-accel` and `zhv`, while the outer platform
+itself remains TCG-emulated.
+
+| Layer | Responsibility | Start reading |
+| :--- | :--- | :--- |
+| Application | QEMU worker and independent host heartbeat | [`apps/qemu_linux/`](apps/qemu_linux/) |
+| Machine and adapters | Devices, Linux loading, GLib, files, console, event loop | [`src/qemu/ports/zephyr/`](src/qemu/ports/zephyr/) |
+| Accelerator | vCPU lifecycle, clocks, wait/kick and native execution | [`src/qemu/accel/zephyr/`](src/qemu/accel/zephyr/) |
+| ARM adapter | CPU state, MMIO, system-register and PSCI exits | [`src/qemu/target/arm/zephyr.c`](src/qemu/target/arm/zephyr.c) |
+| EL2 executor | Stage-2, guest entry/exit, TLS/FP state and timer delivery | [`src/zephyr/arch/arm64/core/hypervisor/`](src/zephyr/arch/arm64/core/hypervisor/) |
+
+The module uses **Zephyr's CMake/Ninja build**, not QEMU's Meson build. It
+compiles an explicit subset of upstream QEMU and retains QEMU's QAPI/trace
+generators. QEMU and Stage-2 share the same guest RAM; MMIO goes through the
+original QEMU address-space and device-model code.
+
+> **Module boundary:** QEMU integration is out of tree, but the EL2 host also
+> needs the Zephyr architecture patches included here. Adding this module to an
+> otherwise unmodified upstream Zephyr is not sufficient to run the guest.
+
+More: [implementation map](docs/architecture.md) · [executor API](src/zephyr/include/zephyr/virtualization/zhv.h).
+
+## Workspace layout
+
+```text
+qemu-on-zephyr/
+├── west/west.yml          # Fixed upstream revisions; no full manifest import
+├── upstream/             # Clean QEMU, Zephyr, dtc and zlib Git submodules
+├── patches/              # Changes to existing upstream files
+├── src/{qemu,zephyr}/     # New implementation files and architecture tests
+├── zephyr/               # Module metadata, Kconfig and CMake source list
+├── apps/                 # Linux guest and standalone PL011 examples
+├── scripts/              # Setup, preparation, build and run commands
+├── tests/                # Environment, GLib and filesystem tests
+└── docs/                 # Setup, architecture, assets and validation
+```
+
+Generated `.venv/`, `.west/`, `.tools/`, `downloads/` and `build/` stay outside
+Git. Builds export the pinned sources, apply `patches/`, overlay `src/`, and
+compile under `build/sources/`. Upstream repositories remain clean. Edit the
+versioned source or patches, **not** the generated trees.
+
+## Everyday commands
+
+| Command | Purpose |
+| :--- | :--- |
+| `make setup` / `make doctor` | Configure dependencies / diagnose the environment |
+| `make update` | Synchronize pinned upstream repositories with west |
+| `make build` / `make run` | Build the ELF / boot into the guest shell |
+| `make check` | End-to-end Linux acceptance; stops QEMU afterward |
+| `make probe` / `make native-probe` | Device models / native accelerator diagnostics |
+| `make test-payload` / `make test-glib` | Filesystem / GLib compatibility regressions |
+| `make test-arch` / `make test-tools` | Architecture, FPU, executor / setup regressions |
+| `make clean` | Remove generated builds; retain tools, SDK and guest downloads |
+
+Use `JOBS=16` to adjust parallel builds. `QEMU_SYSTEM_AARCH64` overrides the
+SDK-hosted QEMU. Run `make help` for the command list.
+
+## Status and scope
+
+**Working profile:** one VM, one Cortex-A53 vCPU, 256 MiB guest RAM, PL011,
+software GICv3, Linux 6.4.16 and an initramfs shell.
+
+- Linux console, timer IRQs, EL0/MMU execution and concurrent host scheduling
+  are covered by the acceptance test.
+- Component coverage includes 196 filesystem checks, 177 GLib differential
+  output lines and 26 architecture/FPU/executor test cases.
+- SDK-provided QEMU 10.0.2 and system QEMU 10.2.2 have booted the profile.
+
+Physical ARM boards, multiple VMs/vCPUs, block/network backends, migration,
+guest EL2/EL3 and VM restart/hotplug are outside the implemented or validated
+profile. This is an **experimental integration**, not a production isolation
+boundary. See [validation evidence and limits](docs/validation.md).
+
+## Contributing and licenses
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md). Keep upstream adaptations in
+patches and new code in source overlays; include the relevant test results.
+
+Components retain their original licenses, including GPL-2.0-or-later and
+Apache-2.0. Guest binaries are downloaded test inputs and are not committed.
+See [license and provenance details](LICENSE.md) and [guest asset sources](docs/guest-assets.md).

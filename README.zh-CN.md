@@ -1,86 +1,148 @@
+<div align="center">
+
 # QEMU on Zephyr
 
-把 QEMU 的 ARM CPU、设备模型和 Linux loader 编进 Zephyr，通过新增的
-`zephyr` accelerator 和底层 `zhv` 执行器运行 Linux guest。
+### 用 QEMU 描述设备，用 Zephyr 承载运行，让 Linux 成为 guest。
 
-```text
-外层 QEMU（ARM virt，TCG）
-└── Zephyr（EL2）
-    ├── 宿主线程、调度器、定时器、串口驱动
-    └── QEMU module + zephyr accelerator + zhv 执行器
-        └── Linux 内核（EL1）和用户态（EL0）
-```
+[![Build and boot](https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml/badge.svg)](https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml)
+![Architecture](https://img.shields.io/badge/architecture-AArch64-2563eb)
+![SDK](https://img.shields.io/badge/Zephyr_SDK-1.0.1-7c3aed)
+![Status](https://img.shields.io/badge/status-experimental-f59e0b)
 
-外层 QEMU 提供开发测试平台；内层 QEMU 使用 ARM 虚拟化执行路径，没有内层
-TCG 指令翻译器。当前实现支持一个 VM、一个 Cortex-A53 vCPU、256 MiB guest
-RAM、PL011、软件 GICv3，以及 Linux 6.4.16 的 initramfs shell。
+把 QEMU 的 ARM machine、设备模型与 Linux loader 移植进 Zephyr，
+通过新增的 `zephyr` accelerator 和原生 EL2 执行器运行 ARM64 Linux。
 
-## 使用
+[快速开始](#快速开始) · [架构](#架构) · [开发指南](CONTRIBUTING.md) · [English](README.md)
 
-Linux 开发机需要 Git、Make、Python 3、CMake 3.28 或更新版本、Ninja、GNU patch、
-tar、C 编译器和 `qemu-system-aarch64`。安装 Zephyr SDK 1.0.1 及其 AArch64 工具链。
-已验证的外层 QEMU 版本为 10.2.2。
+</div>
 
-克隆本仓库后执行：
+---
+
+| 复用 QEMU | 扩展 Zephyr | 降低复现门槛 |
+| :--- | :--- | :--- |
+| QOM/qdev、内存系统、PL011、软件 GICv3、原有 ARM loader。 | EL2 宿主、Stage-2、guest 上下文、陷入处理和定时器。 | 固定上游版本、自动配置 west/Python/SDK、下载镜像、端到端验收。 |
+
+## 快速开始
+
+开发环境为 **Linux + Python 3.12 或更新版本**，参考环境是 Ubuntu 24.04。
+不需要 ARM 开发板或宿主 KVM；外层 QEMU 使用 TCG 提供 ARM 测试平台。
 
 ```sh
+git clone https://github.com/processmission/qemu-on-zephyr.git
 cd qemu-on-zephyr
-make init
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r upstream/zephyr/scripts/requirements-base.txt
-export ZEPHYR_SDK_INSTALL_DIR=/你的路径/zephyr-sdk-1.0.1
+
+# 新机器先安装系统依赖；普通用户会使用 sudo。
+bash scripts/install-host-deps.sh
+
+# 配置本地工具、源码、SDK 和 guest 镜像。
+make setup
+
+# 编译并进入 Linux shell。
 make run
 ```
 
-无需递归初始化 QEMU 的固件等子模块。`make init` 只初始化四个直接依赖：QEMU、
-Zephyr、dtc/libfdt 和 zlib。脚本不会全局安装软件包，也不要求另建 west workspace。
+**Make 命令无需手动激活 venv，也无需每次设置 SDK 路径。**
+退出外层 QEMU：按 **Ctrl-a，再按 x**。guest 内执行 `poweroff -f` 后，Zephyr
+宿主仍会运行。
 
-`make run` 自动准备源码、下载并校验 guest 镜像、编译宿主 ELF，然后进入 Linux
-串口 shell。输入 `uname -a` 可以查看 guest；按 **Ctrl-a，再按 x** 退出外层 QEMU。
-guest 执行 `poweroff -f` 后，Zephyr 宿主仍继续运行。
+<details>
+<summary><strong><code>make setup</code> 具体做什么？</strong></summary>
+
+1. 创建 `.venv/`，安装固定版本的 west、CMake、Ninja。
+2. 在仓库内创建 `.west/`，使用 `west update` 拉取四个固定依赖：QEMU、Zephyr、
+   dtc/libfdt、zlib；不下载无关 HAL、固件或整个 Zephyr 模块集合。
+3. 通过 `west packages` 安装本模块需要的 Python 构建与测试依赖。
+4. 应用补丁和新增源码，生成可丢弃的构建源码树。
+5. 复用已有 **Zephyr SDK 1.0.1**；缺少 SDK 时通过 `west sdk install` 安装
+   **AArch64 GNU 工具链和 host tools**，其中包含 QEMU。
+6. 下载 Linux Image、initramfs，并验证 SHA256。
+
+环境选择记录在 `.tools/`。脚本不全局安装 Python 包、不自动调用 sudo；中断后
+可以重跑。需要系统包时显式运行 `make host-deps`。
+
+</details>
+
+已有 SDK 可显式指定：
 
 ```sh
-make build          # 只编译
-make check          # Linux 完整验收，结束后自动停止 QEMU
-make probe          # QOM/PL011 设备模型回归
-make native-probe   # 原生 accelerator 探针
-make test-payload   # 镜像只读文件系统回归
-make test-glib      # GLib 差分测试，需要宿主 GLib 开发包和 pkg-config
-make test-arch      # EL1/EL2、FPU、执行器测试，先安装 tests/requirements.txt
-make clean          # 删除构建与生成源码，保留下载的镜像
+ZEPHYR_SDK_INSTALL_DIR=/你的路径/zephyr-sdk-1.0.1 make setup
+make doctor
 ```
 
-可用 `JOBS=16` 设置并行编译数，用 `QEMU_SYSTEM_AARCH64` 选择外层 QEMU 程序。
-完整验收日志保存在 `build/linux-validation.log`。
+首次安装完成后，后续构建无需网络。安装、原生 west 操作及故障处理见
+[环境搭建说明](docs/setup.md)。
 
-## 修改代码
+## 架构
 
-根目录通过 `zephyr/module.yml` 注册为 Zephyr module。所有本项目改动都在主仓库中：
+```mermaid
+flowchart TB
+    host["Linux 开发机"] --> outer["外层 QEMU · ARM virt · TCG"]
+    outer --> zephyr["Zephyr 宿主 · EL2"]
+    zephyr --> models["QEMU module<br/>ARM CPU · QOM/qdev · 内存与设备模型"]
+    models --> accel["zephyr accelerator"]
+    accel --> executor["zhv 执行器<br/>Stage-2 · 上下文切换 · 陷入处理"]
+    executor <-->|"进入 guest / 退出"| guest["Linux 内核 EL1 · 用户态 EL0"]
+    guest -.->|"MMIO / 系统寄存器访问"| models
+    zephyr --> scheduler["宿主调度器 · 定时器 · UART"]
+```
 
-| 目录 | 内容 |
-| --- | --- |
-| `upstream/` | 固定版本的上游 Git submodule，保持干净 |
-| `src/qemu/` | 新增的 QEMU accelerator、适配层、GLib、串口和文件系统代码 |
-| `src/zephyr/` | 新增的 EL2 执行器、公共接口与测试 |
+这里有**两层 QEMU**。外层是开发机上的模拟器，加载 `zephyr.elf`；内层 QEMU
+已编进这个 ELF，负责创建 guest machine、加载 Linux 和模拟设备。Linux 指令
+经 `zephyr` accelerator 进入 ARM 虚拟化执行路径，内层没有 TCG 执行循环；
+整个 ARM 平台仍由外层 TCG 模拟。
+
+QEMU 所需源码由 **Zephyr CMake/Ninja** 编译，未使用 QEMU 的 Meson 构建流程。
+移植层维护明确的源码列表，同时复用 QEMU 的 QAPI/trace 生成器。QEMU 的
+MemoryRegion 与执行器的 Stage-2 映射共享同一块 guest RAM。
+
+> 根仓库是 Zephyr 的树外 module，但 EL2 能力仍依赖本仓库提供的 Zephyr 内核
+> 补丁。只把 module 加到完全未修改的上游 Zephyr，还不能运行这个 Linux guest。
+
+## 代码组织
+
+| 路径 | 作用 |
+| :--- | :--- |
+| `west/west.yml` | 上游依赖的固定版本清单 |
+| `upstream/` | 干净的 Git submodule，由 west 同步 |
+| `src/qemu/` | accelerator、ARM 适配、GLib、串口、文件系统等新增代码 |
+| `src/zephyr/` | EL2 执行器、公共接口和底层测试 |
 | `patches/` | 对上游已有文件的修改 |
-| `zephyr/` | 模块 CMake、Kconfig 和元数据 |
-| `apps/` | Linux 与 PL011 示例应用 |
-| `tests/` | 独立回归测试 |
-| `build/sources/` | 自动合成的带补丁源码，不作为编辑入口 |
-| `downloads/` | 校验后的测试镜像，不进入 Git |
+| `zephyr/` | module 元数据、Kconfig、CMake |
+| `apps/`、`tests/` | 示例应用与回归测试 |
+| `build/sources/` | 自动生成的源码树，不作为编辑入口 |
 
-新增功能优先修改 `src/` 或应用代码；修改上游已有文件时维护 `patches/`。
-再次执行 `make build` 会自动检测源码、补丁或版本变化并更新构建树。
-修改 SDK 或 Python 环境后建议先 `make clean`。
+自己的修改都集中在主仓库。升级上游时，更新 submodule 和 west 清单，再调整补丁；
+日常新增功能修改 `src/` 或应用代码即可。
 
-其他 Zephyr 应用可以把本仓库根目录加入 `ZEPHYR_EXTRA_MODULES`，并使用
-`build/sources/zephyr` 作为 `ZEPHYR_BASE`。当前 EL2 能力依赖这里的 Zephyr 补丁，
-不能只把 module 加到完全未修改的上游 Zephyr 就运行 guest。
+## 常用命令
 
-物理板、多 VM、多 vCPU、块设备/网络后端、迁移和 VM 重启管理尚不在已实现或
-已验证范围。源码保留各组件原有许可证；仓库不包含可发布的 guest 二进制包。
+| 命令 | 用途 |
+| :--- | :--- |
+| `make setup` / `make doctor` | 配齐环境 / 检查环境 |
+| `make update` | 用 west 同步固定版本依赖 |
+| `make build` / `make run` | 编译 / 启动 Linux shell |
+| `make check` | 验证 Linux、定时器、EL0/MMU、宿主调度及 guest 关机 |
+| `make probe` / `make native-probe` | 设备模型 / 原生 accelerator 探针 |
+| `make test-payload` / `make test-glib` | 只读文件系统 / GLib 差分测试 |
+| `make test-arch` / `make test-tools` | 架构、FPU、执行器 / 环境工具测试 |
+| `make clean` | 删除构建，保留 SDK、venv 和下载镜像 |
 
-详细说明见 [架构](docs/architecture.md)、[开发指南](CONTRIBUTING.md)、
-[镜像来源](docs/guest-assets.md) 和 [许可证说明](LICENSE.md)。
-本仓库的实际重建及测试结果见 [验证记录](docs/validation.md)。
+用 `JOBS=16` 调整并行度；用 `QEMU_SYSTEM_AARCH64` 覆盖默认的 SDK QEMU。
+直接使用 west，可以先 `. .tools/env.sh`，再运行 `west list`、`west update`、
+`west build`。详见 [开发指南](CONTRIBUTING.md)。
+
+## 当前能力与验证
+
+已支持 **单 VM、单 Cortex-A53 vCPU、256 MiB guest RAM、PL011、软件 GICv3、
+Linux 6.4.16 initramfs shell**。
+
+- 自动验收检查串口交互、定时器 IRQ 增长、EL0/MMU 执行，以及 guest 忙循环期间
+  的宿主调度和 guest 关机后的宿主存活。
+- 回归覆盖 196 项文件系统断言、177 行 GLib 差分输出、26 项架构/FPU/执行器测试。
+- SDK 自带 QEMU 10.0.2 和系统 QEMU 10.2.2 均已运行过该配置。
+
+物理板、多 VM、多核、块设备/网络后端、迁移、guest EL2/EL3、VM 重启与热插拔
+尚不在已实现或已验证范围。这是实验性集成，尚不构成生产级隔离保证。
+
+[架构细节](docs/architecture.md) · [验证记录](docs/validation.md) ·
+[镜像来源](docs/guest-assets.md) · [许可证与来源说明](LICENSE.md)

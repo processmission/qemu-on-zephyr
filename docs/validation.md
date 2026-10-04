@@ -35,3 +35,30 @@ Generated logs are kept under `build/` and are deliberately excluded from Git:
 
 No physical hardware test, upstream-wide test suite or production isolation
 assessment is included in these results.
+
+## Managed west environment
+
+The west-based setup was additionally exercised on an Ubuntu 24.04 container
+with Python 3.12 and no preinstalled Zephyr SDK. The system dependency script,
+isolated Python install, public upstream fetches and SDK installation ran inside
+that container. SDK 1.0.1's AArch64 GNU compiler and host tools were downloaded
+by the official installer, not copied from the development host.
+
+The test also exercised recovery from an incomplete Git fetch. Narrow fetches
+are required for depth-one clones of pinned historical commits. SDK downloads
+were resumed with proxy variables normalized for the official wget-based
+installer; uppercase-only and explicit lowercase proxy handling have a regression
+test. Existing upstream work is checked before wrapper-driven updates.
+
+The container's Linux acceptance passed with SDK QEMU 10.0.2: timer IRQ
+214 -> 243, EL0=1395, MMU-on=26962, concurrent host scheduling and host survival
+after guest poweroff. Ten environment/manifest regression tests passed.
+The same container also passed the PL011 probe, all 196 filesystem checks,
+177-line GLib differential comparison, and all 26 architecture test cases.
+
+On the development host, repeated `make setup`, `make doctor`, direct
+`west build`, managed `make run` with Ctrl-a x, and `west twister` passed.
+The latter ran all five configurations and 26 architecture test cases.
+Logs for the managed workflow are in `build/west-check.log`,
+`build/west-arch.log`, `build/managed-interactive.log`, `build/tools-final.log`
+and `build/ubuntu-sdk-validation.log`.

@@ -20,22 +20,20 @@ apply the existing patches there, edit the upstream files, and export `git diff
 change the submodule's recorded commit to a private patched commit.
 
 To upgrade upstream, select an upstream commit in its submodule, update the
-matching value in `dependencies.json`, rebase the patches and overlays, then
+matching value in `west/west.yml`, rebase the patches and overlays, then
 run the tests before committing the new Git link and pin together. Pins are
 also recorded for libfdt/dtc and zlib. Do not run an unbounded recursive QEMU
 submodule update.
 
 ## Reuse as a module
 
-Run `make prepare` and `make assets` in this repository. Configure an application
+Complete `make setup` in this repository first. Configure an application
 against `build/sources/zephyr` and add the **repository root** to
 `ZEPHYR_EXTRA_MODULES`. The sample applications show this arrangement. For example:
 
 ```sh
-export ZEPHYR_BASE="$PWD/build/sources/zephyr"
-cmake -S apps/qemu_linux -B build/custom -G Ninja \
-    -DBOARD=qemu_cortex_a53 -DZEPHYR_MODULES="$PWD"
-cmake --build build/custom
+. .tools/env.sh
+west build -b qemu_cortex_a53 -d build/custom apps/qemu_linux
 ```
 
 `CONFIG_QEMU` enables the module. The Linux profile additionally requires
@@ -45,7 +43,7 @@ The full sample configuration is in `apps/qemu_linux/prj.conf`.
 The module does not make an unpatched upstream Zephyr capable of hosting a
 guest at EL2. Use the prepared Zephyr tree until the architecture changes are
 available upstream. Current source and guest paths are resolved relative to
-this module; a west workspace is optional.
+this module. The managed workflow uses a repository-local west workspace.
 
 ## Validation
 
@@ -54,11 +52,10 @@ changing integration code. `tests/glib/check_cross.sh` adds an AArch64 compile
 check when `ZEPHYR_SDK_INSTALL_DIR` is set.
 
 Native executor, EL1/EL2 and FPU regression tests are preserved under
-`src/zephyr/tests/` and copied into the prepared Zephyr tree. In the activated
-Python virtual environment, run:
+`src/zephyr/tests/` and copied into the prepared Zephyr tree. Using the managed Python environment, run:
 
 ```sh
-pip install -r tests/requirements.txt
+make setup
 make test-arch
 ```
 

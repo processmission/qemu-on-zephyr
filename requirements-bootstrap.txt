@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Keep the workspace manager and build tools reproducible across host distros.
+west==1.5.0
+cmake==4.3.2
+ninja==1.13.0
+PyYAML==6.0.3

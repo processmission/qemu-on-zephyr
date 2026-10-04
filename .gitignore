@@ -1,5 +1,7 @@
 /build/
 /downloads/
 /.venv/
+/.west/
+/.tools/
 __pycache__/
 *.pyc

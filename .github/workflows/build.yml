@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Build and boot
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host dependencies
+        run: make host-deps
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tools/zephyr-sdk-1.0.1
+            downloads
+            ~/.cache/pip
+          key: qoz-${{ runner.os }}-${{ runner.arch }}-sdk-1.0.1-${{ hashFiles('requirements*.txt', 'tests/requirements.txt') }}
+      - name: Set up workspace and SDK
+        run: make setup
+      - name: Check configuration and Linux boot
+        run: |
+          make doctor test-tools
+          make check
+      - name: Run component regressions
+        run: make probe test-payload test-glib test-arch
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-logs
+          path: |
+            build/*.log
+            build/twister/*.xml
+            build/twister/*.json
