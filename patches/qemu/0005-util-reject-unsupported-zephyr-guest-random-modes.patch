@@ -1,0 +1,75 @@
+From 59950d1674e620733083fecca7b334c186e96920 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] util: reject unsupported Zephyr guest random modes
+
+Reject deterministic guest random mode when its host PRNG support
+is unavailable. Keep the existing random path unchanged on other
+hosts and avoid advertising an entropy source in this profile.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ util/guest-random.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/util/guest-random.c b/util/guest-random.c
+index 33607d5..a060f8f 100644
+--- a/util/guest-random.c
++++ b/util/guest-random.c
+@@ -17,9 +17,10 @@
+ #include "exec/replay-core.h"
+ 
+ 
+-static __thread GRand *thread_rand;
+ static bool deterministic;
+ 
++#ifndef CONFIG_ZEPHYR
++static __thread GRand *thread_rand;
+ 
+ static int glib_random_bytes(void *buf, size_t len)
+ {
+@@ -42,6 +43,12 @@ static int glib_random_bytes(void *buf, size_t len)
+     }
+     return 0;
+ }
++#else
++static int glib_random_bytes(void *buf, size_t len)
++{
++    g_assert_not_reached();
++}
++#endif
+ 
+ int qemu_guest_getrandom(void *buf, size_t len, Error **errp)
+ {
+@@ -79,16 +86,24 @@ uint64_t qemu_guest_random_seed_thread_part1(void)
+ 
+ void qemu_guest_random_seed_thread_part2(uint64_t seed)
+ {
++#ifndef CONFIG_ZEPHYR
+     g_assert(thread_rand == NULL);
+     if (deterministic) {
+         thread_rand =
+             g_rand_new_with_seed_array((const guint32 *)&seed,
+                                        sizeof(seed) / sizeof(guint32));
+     }
++#else
++    assert(!deterministic);
++#endif
+ }
+ 
+ int qemu_guest_random_seed_main(const char *seedstr, Error **errp)
+ {
++#ifdef CONFIG_ZEPHYR
++    error_setg(errp, "Zephyr accelerator does not provide deterministic PRNG mode");
++    return -ENOTSUP;
++#else
+     uint64_t seed;
+     if (parse_uint_full(seedstr, 0, &seed)) {
+         error_setg(errp, "Invalid seed number: %s", seedstr);
+@@ -98,4 +113,5 @@ int qemu_guest_random_seed_main(const char *seedstr, Error **errp)
+         qemu_guest_random_seed_thread_part2(seed);
+         return 0;
+     }
++#endif
+ }

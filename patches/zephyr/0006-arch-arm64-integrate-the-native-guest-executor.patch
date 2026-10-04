@@ -1,0 +1,43 @@
+From 5ec19f5a60029a1a6009d0c89debbc43e3668dde Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:53 +0800
+Subject: [PATCH] arch: arm64: integrate the native guest executor
+
+Build the native executor when its Kconfig option is selected and
+enable the outer QEMU virtualization profile for EL2 tests. The
+module overlay supplies the executor implementation and interface.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ arch/arm64/core/CMakeLists.txt     | 1 +
+ boards/qemu/cortex_a53/board.cmake | 4 +++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/core/CMakeLists.txt b/arch/arm64/core/CMakeLists.txt
+index b1872a4d6..1a87f6572 100644
+--- a/arch/arm64/core/CMakeLists.txt
++++ b/arch/arm64/core/CMakeLists.txt
+@@ -67,6 +67,7 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+ endif()
+ 
+ add_subdirectory_ifdef(CONFIG_XEN xen)
++add_subdirectory_ifdef(CONFIG_ARM64_HYPERVISOR hypervisor)
+ 
+ if(CONFIG_GEN_SW_ISR_TABLE)
+   if(CONFIG_DYNAMIC_INTERRUPTS)
+diff --git a/boards/qemu/cortex_a53/board.cmake b/boards/qemu/cortex_a53/board.cmake
+index 9a2f7fee6..b751a0125 100644
+--- a/boards/qemu/cortex_a53/board.cmake
++++ b/boards/qemu/cortex_a53/board.cmake
+@@ -6,7 +6,9 @@ set(QEMU_BINARY_SUFFIX aarch64)
+ 
+ set(QEMU_CPU_TYPE cortex-a53)
+ 
+-if(CONFIG_ARMV8_A_NS)
++if(CONFIG_ARM64_EL2)
++  set(QEMU_MACH "virt,virtualization=on,secure=off,gic-version=3")
++elseif(CONFIG_ARMV8_A_NS)
+   set(QEMU_MACH virt,gic-version=3)
+ else()
+   set(QEMU_MACH virt,secure=on,gic-version=3)

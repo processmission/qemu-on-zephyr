@@ -1,0 +1,34 @@
+From e19660ab6268defbcfd4909408aada3908894791 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] util: allocate aligned memory on Zephyr
+
+Use the Zephyr libc aligned allocator for QEMU host allocations.
+Round allocation sizes to the requested alignment and reject size
+overflow before allocating.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ util/memalign.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/util/memalign.c b/util/memalign.c
+index c199ae7..25f694e 100644
+--- a/util/memalign.c
++++ b/util/memalign.c
+@@ -48,7 +48,13 @@ void *qemu_try_memalign(size_t alignment, size_t size)
+     if (size == 0) {
+         size++;
+     }
+-#if defined(CONFIG_POSIX_MEMALIGN)
++#if defined(CONFIG_ZEPHYR)
++    if (size > SIZE_MAX - (alignment - 1)) {
++        errno = ENOMEM;
++        return NULL;
++    }
++    ptr = aligned_alloc(alignment, QEMU_ALIGN_UP(size, alignment));
++#elif defined(CONFIG_POSIX_MEMALIGN)
+     int ret;
+     ret = posix_memalign(&ptr, alignment, size);
+     if (ret != 0) {

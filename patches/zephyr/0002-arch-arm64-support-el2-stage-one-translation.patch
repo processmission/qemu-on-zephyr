@@ -1,0 +1,326 @@
+From 27e5de3c9bea92e6e29c5069fea2b6f3bcadd7c9 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:53 +0800
+Subject: [PATCH] arch: arm64: support EL2 stage-one translation
+
+Use EL2 translation controls, descriptor permissions and TLB
+operations for the host stage-one mappings. Keep the existing EL1
+translation regime when EL2 support is disabled.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ arch/arm64/core/mmu.S |   4 ++
+ arch/arm64/core/mmu.c | 118 +++++++++++++++++++++++++++++++++++++++---
+ arch/arm64/core/mmu.h |   7 +++
+ 3 files changed, 122 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm64/core/mmu.S b/arch/arm64/core/mmu.S
+index c8ea620da..2917fe79d 100644
+--- a/arch/arm64/core/mmu.S
++++ b/arch/arm64/core/mmu.S
+@@ -18,7 +18,11 @@ GTEXT(z_arm64_set_ttbr0)
+ SECTION_FUNC(TEXT, z_arm64_set_ttbr0)
+ 
+ 	/* Switch the TTBR0 */
++#if defined(CONFIG_ARM64_EL2)
++	msr	ttbr0_el2, x0
++#else
+ 	msr	ttbr0_el1, x0
++#endif
+ 	isb
+ 
+ 	ret
+diff --git a/arch/arm64/core/mmu.c b/arch/arm64/core/mmu.c
+index 357161bb7..2ffd55a94 100644
+--- a/arch/arm64/core/mmu.c
++++ b/arch/arm64/core/mmu.c
+@@ -744,7 +744,10 @@ static uint64_t get_region_desc(uint32_t attrs)
+ 	uint64_t desc = 0U;
+ 
+ 	/* NS bit for security memory access from secure state */
++	/* The NS bit is only meaningful in the Secure EL1&0 stage-1 regime. */
++#if !defined(CONFIG_ARM64_EL2)
+ 	desc |= (attrs & MT_NS) ? PTE_BLOCK_DESC_NS : 0;
++#endif
+ 
+ 	/*
+ 	 * AP bits for EL0 / ELh Data access permission
+@@ -762,9 +765,15 @@ static uint64_t get_region_desc(uint32_t attrs)
+ 	desc |= (IS_ENABLED(CONFIG_DEMAND_PAGING) && (attrs & MT_RW)) ?
+ 		PTE_SW_WRITABLE : 0;
+ 
+-	/* Mirror permissions to EL0 */
++	/*
++	 * Mirror permissions to EL0.  This is only meaningful for the
++	 * EL1&0 stage-1 regime; the non-VHE EL2 stage-1 regime has no EL0
++	 * and AP[1] is not used.
++	 */
++#if !defined(CONFIG_ARM64_EL2)
+ 	desc |= (attrs & MT_RW_AP_ELx) ?
+ 		 PTE_BLOCK_DESC_AP_ELx : PTE_BLOCK_DESC_AP_EL_HIGHER;
++#endif
+ 
+ 	/* the access flag */
+ 	desc |= PTE_BLOCK_DESC_AF;
+@@ -789,13 +798,22 @@ static uint64_t get_region_desc(uint32_t attrs)
+ 		 */
+ 		desc |= PTE_BLOCK_DESC_OUTER_SHARE;
+ 		/* Map device memory as execute-never */
++#if defined(CONFIG_ARM64_EL2)
++		desc |= PTE_BLOCK_DESC_XN;
++#else
+ 		desc |= PTE_BLOCK_DESC_PXN;
+ 		desc |= PTE_BLOCK_DESC_UXN;
++#endif
+ 		break;
+ 	case MT_NORMAL_NC:
+ 	case MT_NORMAL:
+ 	case MT_NORMAL_WT:
+ 		/* Make Normal RW memory as execute never */
++#if defined(CONFIG_ARM64_EL2)
++		if (((attrs & MT_RW) != 0U) || ((attrs & MT_P_EXECUTE_NEVER) != 0U)) {
++			desc |= PTE_BLOCK_DESC_XN;
++		}
++#else
+ 		if ((attrs & MT_RW) || (attrs & MT_P_EXECUTE_NEVER)) {
+ 			desc |= PTE_BLOCK_DESC_PXN;
+ 		}
+@@ -804,12 +822,20 @@ static uint64_t get_region_desc(uint32_t attrs)
+ 		     (attrs & MT_U_EXECUTE_NEVER)) {
+ 			desc |= PTE_BLOCK_DESC_UXN;
+ 		}
++#endif
+ 
+ #ifdef CONFIG_ARM_BTI
+ 		/* Set GP (Guarded Page) bit for executable pages to enable BTI */
++		/* The execute-never bit is XN in the non-VHE EL2 regime. */
++#if defined(CONFIG_ARM64_EL2)
++		if ((desc & PTE_BLOCK_DESC_XN) == 0U) {
++			desc |= PTE_BLOCK_DESC_GP;
++		}
++#else
+ 		if (!(desc & PTE_BLOCK_DESC_PXN)) {
+ 			desc |= PTE_BLOCK_DESC_GP;
+ 		}
++#endif
+ #endif
+ 
+ 		if (mem_type == MT_NORMAL || mem_type == MT_NORMAL_WT) {
+@@ -819,10 +845,12 @@ static uint64_t get_region_desc(uint32_t attrs)
+ 		}
+ 	}
+ 
+-	/* non-Global bit */
+-	if (attrs & MT_NG) {
++	/* The non-Global bit is not used by the non-VHE EL2 stage-1 regime. */
++#if !defined(CONFIG_ARM64_EL2)
++	if ((attrs & MT_NG) != 0U) {
+ 		desc |= PTE_BLOCK_DESC_NG;
+ 	}
++#endif
+ 
+ 	return desc;
+ }
+@@ -870,6 +898,11 @@ static void remove_map(struct arm_mmu_ptables *ptables, const char *name,
+ 
+ static void invalidate_tlb_all(void)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	__asm__ volatile (
++	"dsb ishst; tlbi alle2; dsb ish; isb"
++	: : : "memory");
++#else
+ #ifdef CONFIG_SMP
+ 	/* Use IS variant to broadcast to all CPUs in Inner Shareable domain */
+ 	__asm__ volatile (
+@@ -880,6 +913,7 @@ static void invalidate_tlb_all(void)
+ 	"dsb ishst; tlbi vmalle1; dsb ish; isb"
+ 	: : : "memory");
+ #endif
++#endif
+ }
+ 
+ /* zephyr execution regions with appropriate attributes */
+@@ -1081,6 +1115,13 @@ static uint64_t get_tcr(int el)
+ 		 * that are translated using TTBR1_EL1.
+ 		 */
+ 		tcr |= TCR_EPD1_DISABLE;
++	} else if (el == 2) {
++		/*
++		 * Non-VHE EL2 stage-1: PS is at bit 16, bit 31 and bit 23
++		 * are RES1, and only TG0 applies (there is no TTBR1_EL2).
++		 * EPD1 is an EL1-only field and must not be written here.
++		 */
++		tcr = (tcr_ps_bits << TCR_EL2_PS_SHIFT) | TCR_EL2_RES1;
+ 	} else {
+ 		tcr = (tcr_ps_bits << TCR_EL3_PS_SHIFT);
+ 	}
+@@ -1092,17 +1133,30 @@ static uint64_t get_tcr(int el)
+ 	 * inner shareable.
+ 	 */
+ #if defined(CONFIG_ARM64_PAGE_SIZE_64KB)
+-	tcr |= TCR_TG1_64K | TCR_TG0_64K;
++	if (el == 2) {
++		tcr |= TCR_TG0_64K;
++	} else {
++		tcr |= TCR_TG1_64K | TCR_TG0_64K;
++	}
+ #elif defined(CONFIG_ARM64_PAGE_SIZE_16KB)
+-	tcr |= TCR_TG1_16K | TCR_TG0_16K;
++	if (el == 2) {
++		tcr |= TCR_TG0_16K;
++	} else {
++		tcr |= TCR_TG1_16K | TCR_TG0_16K;
++	}
+ #else
+-	tcr |= TCR_TG1_4K | TCR_TG0_4K;
++	if (el == 2) {
++		tcr |= TCR_TG0_4K;
++	} else {
++		tcr |= TCR_TG1_4K | TCR_TG0_4K;
++	}
+ #endif
+ 	tcr |= TCR_SHARED_INNER | TCR_ORGN_WBWA | TCR_IRGN_WBWA;
+ 
+ 	return tcr;
+ }
+ 
++#if !defined(CONFIG_ARM64_EL2)
+ static void enable_mmu_el1(struct arm_mmu_ptables *ptables, unsigned int flags)
+ {
+ 	ARG_UNUSED(flags);
+@@ -1126,6 +1180,34 @@ static void enable_mmu_el1(struct arm_mmu_ptables *ptables, unsigned int flags)
+ 	MMU_DEBUG("MMU enabled with dcache\n");
+ }
+ 
++#endif /* !CONFIG_ARM64_EL2 */
++
++#if defined(CONFIG_ARM64_EL2)
++static void enable_mmu_el2(struct arm_mmu_ptables *ptables, unsigned int flags)
++{
++	ARG_UNUSED(flags);
++	uint64_t val;
++
++	/* Set MAIR, TCR and TTBR registers for the non-VHE EL2 regime. */
++	write_mair_el2(MEMORY_ATTRIBUTES);
++	write_tcr_el2(get_tcr(2));
++	write_ttbr0_el2((uint64_t)ptables->base_xlat_table);
++
++	/* Ensure these changes are seen before MMU is enabled. */
++	barrier_isync_fence_full();
++
++	/* Enable the MMU and data cache. */
++	val = read_sctlr_el2();
++	write_sctlr_el2(val | SCTLR_M_BIT | SCTLR_C_BIT);
++
++	/* Ensure the MMU enable takes effect immediately. */
++	barrier_isync_fence_full();
++
++	MMU_DEBUG("MMU enabled at EL2 with dcache");
++}
++
++#endif /* CONFIG_ARM64_EL2 */
++
+ /* ARM MMU Driver Initial Setup */
+ 
+ static struct arm_mmu_ptables kernel_ptables;
+@@ -1153,11 +1235,19 @@ void z_arm64_mm_init(bool is_primary_core)
+ {
+ 	unsigned int flags = 0U;
+ 
++#if defined(CONFIG_ARM64_EL2)
++	__ASSERT(GET_EL(read_currentel()) == MODE_EL2,
++		 "Exception level not EL2, MMU not enabled!\n");
++
++	/* Ensure that MMU is already not enabled */
++	__ASSERT((read_sctlr_el2() & SCTLR_M_BIT) == 0, "MMU is already enabled\n");
++#else
+ 	__ASSERT(GET_EL(read_currentel()) == MODE_EL1,
+ 		 "Exception level not EL1, MMU not enabled!\n");
+ 
+ 	/* Ensure that MMU is already not enabled */
+ 	__ASSERT((read_sctlr_el1() & SCTLR_M_BIT) == 0, "MMU is already enabled\n");
++#endif
+ 
+ 	/*
+ 	 * Only booting core setup up the page tables.
+@@ -1167,8 +1257,11 @@ void z_arm64_mm_init(bool is_primary_core)
+ 		setup_page_tables(&kernel_ptables);
+ 	}
+ 
+-	/* currently only EL1 is supported */
++#if defined(CONFIG_ARM64_EL2)
++	enable_mmu_el2(&kernel_ptables, flags);
++#else
+ 	enable_mmu_el1(&kernel_ptables, flags);
++#endif
+ }
+ 
+ static void sync_domains(uintptr_t virt, size_t size, const char *name)
+@@ -1286,7 +1379,11 @@ int arch_page_phys_get(void *virt, uintptr_t *phys)
+ 	int key;
+ 
+ 	key = arch_irq_lock();
++#if defined(CONFIG_ARM64_EL2)
++	__asm__ volatile ("at S1E2R, %0" : : "r" (virt));
++#else
+ 	__asm__ volatile ("at S1E1R, %0" : : "r" (virt));
++#endif
+ 	barrier_isync_fence_full();
+ 	par = read_par_el1();
+ 	arch_irq_unlock(key);
+@@ -1604,6 +1701,12 @@ void z_arm64_swap_mem_domains(struct k_thread *incoming)
+  */
+ static inline void invalidate_tlb_page(uintptr_t virt)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	__asm__ volatile("dsb ishst; tlbi vae2, %0; dsb ish; isb"
++			 :
++			 : "r"(virt >> TLBI_VA_SHIFT)
++			 : "memory");
++#else
+ #ifdef CONFIG_SMP
+ 	/* Use IS variant to broadcast to all CPUs in Inner Shareable domain */
+ 	__asm__ volatile("dsb ishst; tlbi vaae1is, %0; dsb ish; isb"
+@@ -1616,6 +1719,7 @@ static inline void invalidate_tlb_page(uintptr_t virt)
+ 			 : "r"(virt >> TLBI_VA_SHIFT)
+ 			 : "memory");
+ #endif
++#endif
+ }
+ 
+ static uint64_t *get_pte_location(struct arm_mmu_ptables *ptables,
+diff --git a/arch/arm64/core/mmu.h b/arch/arm64/core/mmu.h
+index 4bc8bdc2f..1afb17896 100644
+--- a/arch/arm64/core/mmu.h
++++ b/arch/arm64/core/mmu.h
+@@ -30,7 +30,11 @@
+  */
+ static ALWAYS_INLINE bool mmu_is_enabled(void)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	return (read_sctlr_el2() & SCTLR_M_BIT) != 0U;
++#else
+ 	return (read_sctlr_el1() & SCTLR_M_BIT) != 0U;
++#endif
+ }
+ 
+ /*
+@@ -182,6 +186,8 @@ static ALWAYS_INLINE bool mmu_is_enabled(void)
+ #define PTE_BLOCK_DESC_GP		(1ULL << 50)
+ #define PTE_BLOCK_DESC_PXN		(1ULL << 53)
+ #define PTE_BLOCK_DESC_UXN		(1ULL << 54)
++/* In the non-VHE EL2 stage-1 regime only XN (bit 54) is meaningful. */
++#define PTE_BLOCK_DESC_XN		(1ULL << 54)
+ 
+ /*
+  * Descriptor physical address field bits
+@@ -201,6 +207,7 @@ static ALWAYS_INLINE bool mmu_is_enabled(void)
+  */
+ #define TCR_EL1_IPS_SHIFT	32U
+ #define TCR_EL2_PS_SHIFT	16U
++#define TCR_EL2_RES1		(BIT(31) | BIT(23))
+ #define TCR_EL3_PS_SHIFT	16U
+ 
+ #define TCR_T0SZ_SHIFT		0U

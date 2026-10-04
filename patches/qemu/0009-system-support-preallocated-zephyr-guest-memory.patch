@@ -1,0 +1,47 @@
+From f529e7c40a67fcbc50afd72faf56deae131eabb0 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] system: support preallocated Zephyr guest memory
+
+Keep preallocated guest RAM usable without a Linux-style host
+memory backend. Preserve normal physical-memory handling elsewhere.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ system/physmem.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/system/physmem.c b/system/physmem.c
+index a4a6a47..389d027 100644
+--- a/system/physmem.c
++++ b/system/physmem.c
+@@ -2601,8 +2601,10 @@ void qemu_ram_free(RAMBlock *block)
+     }
+ 
+     qemu_mutex_lock_ramlist();
++#ifndef CONFIG_ZEPHYR
+     name = cpr_name(block->mr);
+     cpr_delete_fd(name, 0);
++#endif
+     QLIST_REMOVE_RCU(block, next);
+     qatomic_set(&ram_list.mru_block, NULL);
+     /* Write list before version */
+@@ -2616,6 +2618,9 @@ void qemu_ram_free(RAMBlock *block)
+ /* Simply remap the given VM memory location from start to start+length */
+ static int qemu_ram_remap_mmap(RAMBlock *block, uint64_t start, size_t length)
+ {
++#ifdef CONFIG_ZEPHYR
++    return -ENOTSUP;
++#else
+     int flags, prot;
+     void *area;
+     void *host_startaddr = block->host + start;
+@@ -2628,6 +2633,7 @@ static int qemu_ram_remap_mmap(RAMBlock *block, uint64_t start, size_t length)
+     prot |= block->flags & RAM_READONLY ? 0 : PROT_WRITE;
+     area = mmap(host_startaddr, length, prot, flags, -1, 0);
+     return area != host_startaddr ? -errno : 0;
++#endif
+ }
+ 
+ /*

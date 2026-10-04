@@ -1,0 +1,90 @@
+From 1635ec493caa3648f8d5333a205798bed52353e1 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] util: resolve Zephyr executable and data paths
+
+Resolve the fixed executable prefix without process-path services.
+Check payload readability through open and close because the Zephyr
+file adapter does not provide the POSIX access interface.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ util/cutils.c  |  8 +++++++-
+ util/datadir.c | 18 ++++++++++++++++--
+ 2 files changed, 23 insertions(+), 3 deletions(-)
+
+diff --git a/util/cutils.c b/util/cutils.c
+index 96c80d4..88c32e7 100644
+--- a/util/cutils.c
++++ b/util/cutils.c
+@@ -1032,7 +1032,9 @@ static const char *exec_dir;
+ 
+ void qemu_init_exec_dir(const char *argv0)
+ {
+-#ifdef G_OS_WIN32
++#ifdef CONFIG_ZEPHYR
++    exec_dir = CONFIG_BINDIR;
++#elif defined(G_OS_WIN32)
+     char *p;
+     char buf[MAX_PATH];
+     DWORD len;
+@@ -1133,6 +1135,9 @@ void qemu_init_exec_dir(const char *argv0)
+ 
+ char *get_relocated_path(const char *dir)
+ {
++#ifdef CONFIG_ZEPHYR
++    return g_strdup(dir);
++#else
+     size_t prefix_len = strlen(CONFIG_PREFIX);
+     const char *bindir = CONFIG_BINDIR;
+     GString *result;
+@@ -1198,4 +1203,5 @@ char *get_relocated_path(const char *dir)
+     g_string_assign(result, dir);
+ out:
+     return g_string_free(result, false);
++#endif
+ }
+diff --git a/util/datadir.c b/util/datadir.c
+index f96f8fc..0eca193 100644
+--- a/util/datadir.c
++++ b/util/datadir.c
+@@ -30,6 +30,20 @@
+ static const char *data_dir[16];
+ static int data_dir_idx;
+ 
++static bool readable_file(const char *name)
++{
++#ifdef CONFIG_ZEPHYR
++    int fd = open(name, O_RDONLY);
++
++    if (fd < 0) {
++        return false;
++    }
++    return close(fd) == 0;
++#else
++    return access(name, R_OK) == 0;
++#endif
++}
++
+ char *qemu_find_file(QemuFileType type, const char *name)
+ {
+     int i;
+@@ -37,7 +51,7 @@ char *qemu_find_file(QemuFileType type, const char *name)
+     char *buf;
+ 
+     /* Try the name as a straight path first */
+-    if (access(name, R_OK) == 0) {
++    if (readable_file(name)) {
+         trace_load_file(name, name);
+         return g_strdup(name);
+     }
+@@ -58,7 +72,7 @@ char *qemu_find_file(QemuFileType type, const char *name)
+ 
+     for (i = 0; i < data_dir_idx; i++) {
+         buf = g_strdup_printf("%s/%s%s", data_dir[i], subdir, name);
+-        if (access(buf, R_OK) == 0) {
++        if (readable_file(buf)) {
+             trace_load_file(name, buf);
+             return buf;
+         }

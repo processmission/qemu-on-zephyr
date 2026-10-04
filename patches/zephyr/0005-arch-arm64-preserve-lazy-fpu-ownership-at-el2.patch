@@ -1,0 +1,177 @@
+From 6f50b2e4c7ce7519877d75ebd0be89bb6e447c61 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:53 +0800
+Subject: [PATCH] arch: arm64: preserve lazy FPU ownership at EL2
+
+Control non-VHE EL2 FP access through CPTR_EL2 while retaining lazy
+FPU ownership, interrupt save/restore and the normal EL1 path.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ arch/arm64/core/fpu.c | 87 ++++++++++++++++++++++---------------------
+ 1 file changed, 45 insertions(+), 42 deletions(-)
+
+diff --git a/arch/arm64/core/fpu.c b/arch/arm64/core/fpu.c
+index 043c9bb98..29c66bffd 100644
+--- a/arch/arm64/core/fpu.c
++++ b/arch/arm64/core/fpu.c
+@@ -132,6 +132,38 @@ static void convert_Vx_to_Zx(struct z_arm64_fp_context *context)
+ #define USE_SVE(t) false
+ #endif
+ 
++static void set_fpu_access(bool enable, bool sve)
++{
++	uint64_t old_reg;
++	uint64_t reg;
++
++	if (IS_ENABLED(CONFIG_ARM64_EL2)) {
++		/* Non-VHE EL2 traps its own FP/SIMD accesses when TFP is set. */
++		old_reg = read_cptr_el2();
++		reg = enable ? old_reg & ~CPTR_TFP_BIT : old_reg | CPTR_TFP_BIT;
++		if (reg != old_reg) {
++			write_cptr_el2(reg);
++		}
++	} else {
++		old_reg = read_cpacr_el1();
++		if (enable) {
++			reg = old_reg | CPACR_EL1_FPEN;
++			if (sve) {
++				reg |= CPACR_EL1_ZEN;
++			}
++		} else {
++			reg = old_reg & ~(CPACR_EL1_FPEN | CPACR_EL1_ZEN);
++		}
++		if (reg != old_reg) {
++			write_cpacr_el1(reg);
++		}
++	}
++
++	if (reg != old_reg) {
++		barrier_isync_fence_full();
++	}
++}
++
+ /*
+  * Flush FPU content and disable access.
+  * This is called locally and also from flush_fpu_ipi_handler().
+@@ -143,15 +175,8 @@ void arch_flush_local_fpu(void)
+ 	struct k_thread *owner = atomic_ptr_get(&_current_cpu->arch.fpu_owner);
+ 
+ 	if (owner != NULL) {
+-		uint64_t cpacr = read_cpacr_el1();
+-
+ 		/* turn on FPU access */
+-		cpacr |= CPACR_EL1_FPEN;
+-		if (USE_SVE(owner)) {
+-			cpacr |= CPACR_EL1_ZEN;
+-		}
+-		write_cpacr_el1(cpacr);
+-		barrier_isync_fence_full();
++		set_fpu_access(true, USE_SVE(owner));
+ 
+ 		/* save current owner's content */
+ 		if (USE_SVE(owner)) {
+@@ -168,9 +193,7 @@ void arch_flush_local_fpu(void)
+ 		DBG("disable", owner);
+ 
+ 		/* disable FPU access */
+-		cpacr &= ~(CPACR_EL1_FPEN | CPACR_EL1_ZEN);
+-		write_cpacr_el1(cpacr);
+-		barrier_isync_fence_full();
++		set_fpu_access(false, false);
+ 	}
+ }
+ 
+@@ -225,13 +248,7 @@ void z_arm64_fpu_enter_exc(void)
+ 	__ASSERT(read_daif() & DAIF_IRQ_BIT, "must be called with IRQs disabled");
+ 
+ 	/* always deny FPU access whenever an exception is entered */
+-	uint64_t old_cpacr = read_cpacr_el1();
+-	uint64_t cpacr = old_cpacr & ~(CPACR_EL1_FPEN | CPACR_EL1_ZEN);
+-
+-	if (cpacr != old_cpacr) {
+-		write_cpacr_el1(cpacr);
+-		barrier_isync_fence_full();
+-	}
++	set_fpu_access(false, false);
+ }
+ 
+ /*
+@@ -323,18 +340,12 @@ void z_arm64_fpu_trap(struct arch_esf *esf, uint32_t exception_class)
+ 	DBG_PC("trap entry", esf->elr);
+ 
+ 	struct k_thread *owner = atomic_ptr_get(&_current_cpu->arch.fpu_owner);
+-	uint64_t cpacr = read_cpacr_el1();
+ 
+ 	/* turn on FPU access */
+-	cpacr |= CPACR_EL1_FPEN;
+-	if (USE_SVE(owner)) {
+-		cpacr |= CPACR_EL1_ZEN;
+-	}
+-	write_cpacr_el1(cpacr);
+-	barrier_isync_fence_full();
++	set_fpu_access(true, USE_SVE(owner));
+ 
+ 	/* save current owner's content  if any */
+-	if (owner) {
++	if (owner != NULL) {
+ 		if (USE_SVE(owner)) {
+ 			z_arm64_sve_save(&owner->arch.saved_fp_context);
+ 			DBG("sve_save", owner);
+@@ -346,13 +357,16 @@ void z_arm64_fpu_trap(struct arch_esf *esf, uint32_t exception_class)
+ 		atomic_ptr_clear(&_current_cpu->arch.fpu_owner);
+ 	}
+ 
+-	if (IS_ENABLED(CONFIG_ARM64_SVE) && exception_class == 0x19 &&
+-	    !(cpacr & CPACR_EL1_ZEN)) {
++#ifdef CONFIG_ARM64_SVE
++	uint64_t cpacr = read_cpacr_el1();
++
++	if (exception_class == 0x19 && (cpacr & CPACR_EL1_ZEN) == 0U) {
+ 		/* SVE trap - also enable SVE access */
+ 		cpacr |= CPACR_EL1_ZEN;
+ 		write_cpacr_el1(cpacr);
+ 		barrier_isync_fence_full();
+ 	}
++#endif
+ 
+ 	if (arch_exception_depth() > 1) {
+ 		/*
+@@ -429,20 +443,14 @@ static void fpu_access_update(unsigned int exc_update_level)
+ {
+ 	__ASSERT(read_daif() & DAIF_IRQ_BIT, "must be called with IRQs disabled");
+ 
+-	uint64_t old_cpacr = read_cpacr_el1();
+-	uint64_t cpacr = old_cpacr;
+-
+ 	if (arch_exception_depth() == exc_update_level) {
+ 		/* We're about to execute non-exception code */
+ 		if (atomic_ptr_get(&_current_cpu->arch.fpu_owner) == _current) {
+ 			/* turn on FPU access */
+-			cpacr |= CPACR_EL1_FPEN;
+-			if (USE_SVE(_current)) {
+-				cpacr |= CPACR_EL1_ZEN;
+-			}
++			set_fpu_access(true, USE_SVE(_current));
+ 		} else {
+ 			/* deny FPU access */
+-			cpacr &= ~(CPACR_EL1_FPEN | CPACR_EL1_ZEN);
++			set_fpu_access(false, false);
+ 		}
+ 	} else {
+ 		/*
+@@ -450,12 +458,7 @@ static void fpu_access_update(unsigned int exc_update_level)
+ 		 * access as we want to make sure IRQs are disabled before
+ 		 * granting it access (see z_arm64_fpu_trap() documentation).
+ 		 */
+-		cpacr &= ~(CPACR_EL1_FPEN | CPACR_EL1_ZEN);
+-	}
+-	/* The instruction barrier is needed only when access permissions change. */
+-	if (cpacr != old_cpacr) {
+-		write_cpacr_el1(cpacr);
+-		barrier_isync_fence_full();
++		set_fpu_access(false, false);
+ 	}
+ }
+ 

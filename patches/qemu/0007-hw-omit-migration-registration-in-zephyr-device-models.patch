@@ -1,0 +1,116 @@
+From 7aab18e3f46e66c9c3cc0e90210c83e9a07f80df Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] hw: omit migration registration in Zephyr device models
+
+Keep the real chardev, PL011 and GICv3 implementations available
+without registering migration descriptions on Zephyr. Migration is
+not part of this host profile.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ chardev/char.c             | 8 ++++++++
+ hw/char/pl011.c            | 5 +++++
+ hw/intc/arm_gicv3_common.c | 5 +++++
+ 3 files changed, 18 insertions(+)
+
+diff --git a/chardev/char.c b/chardev/char.c
+index 9da0911..c581c3e 100644
+--- a/chardev/char.c
++++ b/chardev/char.c
+@@ -92,6 +92,7 @@ static void do_write_log(Chardev *s, const uint8_t *buf, size_t len)
+     }
+ }
+ 
++#ifndef CONFIG_ZEPHYR
+ static void do_write_log_timestamps(Chardev *s, const uint8_t *buf, size_t len)
+ {
+     g_autofree char *timestr = NULL;
+@@ -128,17 +129,24 @@ static void do_write_log_timestamps(Chardev *s, const uint8_t *buf, size_t len)
+     }
+ }
+ 
++#endif
++
+ static void qemu_chr_write_log(Chardev *s, const uint8_t *buf, size_t len)
+ {
+     if (s->logfd < 0) {
+         return;
+     }
+ 
++#ifdef CONFIG_ZEPHYR
++    assert(!s->logtimestamp);
++    do_write_log(s, buf, len);
++#else
+     if (s->logtimestamp) {
+         do_write_log_timestamps(s, buf, len);
+     } else {
+         do_write_log(s, buf, len);
+     }
++#endif
+ }
+ 
+ static int qemu_chr_write_buffer(Chardev *s,
+diff --git a/hw/char/pl011.c b/hw/char/pl011.c
+index 5ad9e73..0522180 100644
+--- a/hw/char/pl011.c
++++ b/hw/char/pl011.c
+@@ -566,6 +566,7 @@ static const MemoryRegionOps pl011_ops = {
+     .impl.max_access_size = 4,
+ };
+ 
++#ifndef CONFIG_ZEPHYR
+ static bool pl011_clock_needed(void *opaque)
+ {
+     PL011State *s = PL011(opaque);
+@@ -641,6 +642,8 @@ static const VMStateDescription vmstate_pl011 = {
+     }
+ };
+ 
++#endif
++
+ static const Property pl011_properties[] = {
+     DEFINE_PROP_CHR("chardev", PL011State, chr),
+     DEFINE_PROP_BOOL("migrate-clk", PL011State, migrate_clk, true),
+@@ -716,7 +719,9 @@ static void pl011_class_init(ObjectClass *oc, const void *data)
+ 
+     dc->realize = pl011_realize;
+     device_class_set_legacy_reset(dc, pl011_reset);
++#ifndef CONFIG_ZEPHYR
+     dc->vmsd = &vmstate_pl011;
++#endif
+     device_class_set_props(dc, pl011_properties);
+ }
+ 
+diff --git a/hw/intc/arm_gicv3_common.c b/hw/intc/arm_gicv3_common.c
+index f7ba74e..c6c559e 100644
+--- a/hw/intc/arm_gicv3_common.c
++++ b/hw/intc/arm_gicv3_common.c
+@@ -36,6 +36,7 @@
+ #include "system/hvf.h"
+ 
+ 
++#ifndef CONFIG_ZEPHYR
+ static void gicv3_gicd_no_migration_shift_bug_post_load(GICv3State *cs)
+ {
+     if (cs->gicd_no_migration_shift_bug) {
+@@ -311,6 +312,8 @@ static const VMStateDescription vmstate_gicv3 = {
+     }
+ };
+ 
++#endif
++
+ void gicv3_init_irqs_and_mmio(GICv3State *s, qemu_irq_handler handler,
+                               const MemoryRegionOps *ops)
+ {
+@@ -630,7 +633,9 @@ static void arm_gicv3_common_class_init(ObjectClass *klass, const void *data)
+     rc->phases.hold = arm_gicv3_common_reset_hold;
+     dc->realize = arm_gicv3_common_realize;
+     device_class_set_props(dc, arm_gicv3_common_properties);
++#ifndef CONFIG_ZEPHYR
+     dc->vmsd = &vmstate_gicv3;
++#endif
+     albifc->arm_linux_init = arm_gic_common_linux_init;
+ }
+ 

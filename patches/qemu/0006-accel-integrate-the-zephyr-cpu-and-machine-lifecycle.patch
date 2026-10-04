@@ -1,0 +1,238 @@
+From 9d076f5569ae2e8784aafe55185610726625da90 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] accel: integrate the Zephyr CPU and machine lifecycle
+
+Connect accelerator CPU initialization to the ARM object lifecycle.
+Use the Zephyr model owner and clocks while omitting unsupported
+GDB and migration registration in the reduced host configuration.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ hw/core/cpu-common.c      |  6 ++++++
+ hw/core/machine.c         |  7 +++++++
+ include/hw/core/cpu.h     |  4 ++++
+ include/system/hw_accel.h |  8 ++++++++
+ system/cpu-timers.c       |  2 ++
+ system/cpus.c             |  5 ++++-
+ target/arm/cpu.c          | 15 +++++++++++++++
+ 7 files changed, 46 insertions(+), 1 deletion(-)
+
+diff --git a/hw/core/cpu-common.c b/hw/core/cpu-common.c
+index 4f4c87f..0ae2101 100644
+--- a/hw/core/cpu-common.c
++++ b/hw/core/cpu-common.c
+@@ -235,12 +235,16 @@ bool cpu_common_realize(CPUState *cpu, Error **errp)
+         return false;
+     }
+ 
++#ifndef CONFIG_ZEPHYR
+     gdb_init_cpu(cpu);
++#endif
+ 
+     /* Wait until cpu initialization complete before exposing cpu. */
+     cpu_list_add(cpu);
+ 
++#ifndef CONFIG_ZEPHYR
+     cpu_vmstate_register(cpu);
++#endif
+ 
+     return true;
+ }
+@@ -269,7 +273,9 @@ static void cpu_common_unrealizefn(DeviceState *dev)
+ 
+ void cpu_common_unrealize(CPUState *cpu)
+ {
++#ifndef CONFIG_ZEPHYR
+     cpu_vmstate_unregister(cpu);
++#endif
+ 
+     cpu_list_remove(cpu);
+     /*
+diff --git a/hw/core/machine.c b/hw/core/machine.c
+index 8939ae1..04d0bce 100644
+--- a/hw/core/machine.c
++++ b/hw/core/machine.c
+@@ -1502,6 +1502,10 @@ static void validate_cpu_cluster_to_numa_boundary(MachineState *ms)
+ MemoryRegion *machine_consume_memdev(MachineState *machine,
+                                      HostMemoryBackend *backend)
+ {
++#ifdef CONFIG_ZEPHYR
++    error_report("Zephyr machine RAM must be borrowed from its native accelerator");
++    abort();
++#else
+     MemoryRegion *ret = host_memory_backend_get_memory(backend);
+ 
+     if (host_memory_backend_is_mapped(backend)) {
+@@ -1512,6 +1516,7 @@ MemoryRegion *machine_consume_memdev(MachineState *machine,
+     host_memory_backend_set_mapped(backend, true);
+     vmstate_register_ram_global(ret);
+     return ret;
++#endif
+ }
+ 
+ const char *machine_class_default_cpu_type(MachineClass *mc)
+@@ -1784,7 +1789,9 @@ void qdev_machine_creation_done(void)
+        clock values from the log. */
+     replay_checkpoint(CHECKPOINT_RESET);
+     qemu_system_reset(SHUTDOWN_CAUSE_NONE);
++#ifndef CONFIG_ZEPHYR
+     register_global_state();
++#endif
+ }
+ 
+ static const TypeInfo machine_info = {
+diff --git a/include/hw/core/cpu.h b/include/hw/core/cpu.h
+index 328e300..c780eca 100644
+--- a/include/hw/core/cpu.h
++++ b/include/hw/core/cpu.h
+@@ -509,7 +509,11 @@ struct CPUState {
+     int64_t icount_budget;
+     int64_t icount_extra;
+     uint64_t random_seed;
++#ifdef CONFIG_ZEPHYR
++    jmp_buf jmp_env;
++#else
+     sigjmp_buf jmp_env;
++#endif
+ 
+     QemuMutex work_mutex;
+     QSIMPLEQ_HEAD(, qemu_work_item) work_list;
+diff --git a/include/system/hw_accel.h b/include/system/hw_accel.h
+index f0c10b6..1c7c123 100644
+--- a/include/system/hw_accel.h
++++ b/include/system/hw_accel.h
+@@ -18,6 +18,9 @@
+ #include "system/whpx.h"
+ #include "system/nvmm.h"
+ #include "system/nitro-accel.h"
++#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
++#include "system/zephyr.h"
++#endif
+ 
+ /**
+  * cpu_synchronize_state:
+@@ -48,6 +51,11 @@ void cpu_synchronize_post_init(CPUState *cpu);
+  */
+ static inline bool hwaccel_enabled(void)
+ {
++#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
++    if (zephyr_enabled()) {
++        return true;
++    }
++#endif
+     return hvf_enabled()
+         || kvm_enabled()
+         || nvmm_enabled()
+diff --git a/system/cpu-timers.c b/system/cpu-timers.c
+index 9919b46..ac42fb4 100644
+--- a/system/cpu-timers.c
++++ b/system/cpu-timers.c
+@@ -271,5 +271,7 @@ void cpu_timers_init(void)
+ {
+     seqlock_init(&timers_state.vm_clock_seqlock);
+     qemu_spin_init(&timers_state.vm_clock_lock);
++#ifndef CONFIG_ZEPHYR
+     vmstate_register(NULL, 0, &vmstate_timers, &timers_state);
++#endif
+ }
+diff --git a/system/cpus.c b/system/cpus.c
+index e11a5aa..28cfaab 100644
+--- a/system/cpus.c
++++ b/system/cpus.c
+@@ -428,7 +428,10 @@ void cpus_kick_thread(CPUState *cpu)
+     }
+     qatomic_set(&cpu->thread_kicked, true);
+ 
+-#ifndef _WIN32
++#if defined(CONFIG_ZEPHYR)
++    /* Native accelerators install a non-signal kick callback. */
++    g_assert_not_reached();
++#elif !defined(_WIN32)
+     int err = pthread_kill(cpu->thread->thread, SIG_IPI);
+     if (err && err != ESRCH) {
+         fprintf(stderr, "qemu:%s: %s", __func__, strerror(err));
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 77aa78f..9693e18 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -26,6 +26,7 @@
+ #include "system/whpx.h"
+ #include "target/arm/tcg/idau.h"
+ #include "qemu/module.h"
++#include "qemu/accel.h"
+ #include "qapi/error.h"
+ #include "cpu.h"
+ #ifdef CONFIG_TCG
+@@ -2395,8 +2396,10 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
+ #endif
+ 
+     register_cp_regs_for_features(cpu);
++#ifndef CONFIG_ZEPHYR
+     arm_cpu_register_gdb_regs_for_features(cpu);
+     arm_cpu_register_gdb_commands(cpu);
++#endif
+ 
+     arm_init_cpreg_list(cpu);
+ 
+@@ -2497,6 +2500,7 @@ static const Property arm_cpu_properties[] = {
+                       backcompat_pauth_default_use_qarma5, false),
+ };
+ 
++#ifndef CONFIG_ZEPHYR
+ static const gchar *arm_gdb_arch_name(CPUState *cs)
+ {
+     ARMCPU *cpu = ARM_CPU(cs);
+@@ -2521,6 +2525,8 @@ static const char *arm_gdb_get_core_xml_file(CPUState *cs)
+     return "arm-core.xml";
+ }
+ 
++#endif
++
+ #ifdef CONFIG_USER_ONLY
+ /**
+  * aarch64_untagged_addr:
+@@ -2552,10 +2558,14 @@ static const struct SysemuCPUOps arm_sysemu_ops = {
+     .has_work = arm_cpu_has_work,
+     .translate_for_debug = arm_cpu_translate_for_debug,
+     .asidx_from_attrs = arm_asidx_from_attrs,
++#ifndef CONFIG_ZEPHYR
+     .write_elf32_note = arm_cpu_write_elf32_note,
+     .write_elf64_note = arm_cpu_write_elf64_note,
++#endif
+     .internal_is_big_endian = arm_cpu_internal_is_big_endian,
++#ifndef CONFIG_ZEPHYR
+     .legacy_vmsd = &vmstate_arm_cpu,
++#endif
+ };
+ #endif
+ 
+@@ -2635,15 +2645,19 @@ static void arm_cpu_class_init(ObjectClass *oc, const void *data)
+     cc->dump_state = arm_cpu_dump_state;
+     cc->set_pc = arm_cpu_set_pc;
+     cc->get_pc = arm_cpu_get_pc;
++#ifndef CONFIG_ZEPHYR
+     cc->gdb_read_register = arm_cpu_gdb_read_register;
+     cc->gdb_write_register = arm_cpu_gdb_write_register;
++#endif
+ #ifndef CONFIG_USER_ONLY
+     cc->max_as = ARMASIdx_MAX;
+     cc->sysemu_ops = &arm_sysemu_ops;
+ #endif
++#ifndef CONFIG_ZEPHYR
+     cc->gdb_arch_name = arm_gdb_arch_name;
+     cc->gdb_get_core_xml_file = arm_gdb_get_core_xml_file;
+     cc->gdb_stop_before_watchpoint = true;
++#endif
+     cc->disas_set_info = arm_disas_set_info;
+ 
+ #ifdef CONFIG_TCG
+@@ -2657,6 +2671,7 @@ static void arm_cpu_instance_init(Object *obj)
+ 
+     acc->info->initfn(obj);
+     arm_cpu_post_init(obj);
++    accel_cpu_instance_init(CPU(obj));
+ }
+ 
+ static void cpu_register_class_init(ObjectClass *oc, const void *data)

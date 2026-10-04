@@ -1,0 +1,111 @@
+From 09528f3d3842db80ceee69a5e8a6beede749c058 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] hw/arm: load Linux payloads without firmware services
+
+Keep the ARM Image, initrd and ROM loading path while excluding
+firmware configuration devices and option-ROM services unavailable
+on Zephyr. Reject requests for those services explicitly.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ hw/arm/boot.c    |  5 +++++
+ hw/core/loader.c | 19 ++++++++++++++++++-
+ 2 files changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/hw/arm/boot.c b/hw/arm/boot.c
+index 9b7553d..14f13a1 100644
+--- a/hw/arm/boot.c
++++ b/hw/arm/boot.c
+@@ -1114,6 +1114,10 @@ static void arm_setup_direct_kernel_boot(ARMCPU *cpu,
+ 
+ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
+ {
++#ifdef CONFIG_ZEPHYR
++    error_report("Zephyr ARM virt requires a direct kernel image");
++    abort();
++#else
+     /* Set up for booting firmware (which might load a kernel via fw_cfg) */
+ 
+     if (have_dtb(info)) {
+@@ -1173,6 +1177,7 @@ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
+      * same way as hardware. Leave env->boot_info NULL, so that
+      * do_cpu_reset() knows it does not need to alter the PC on reset.
+      */
++#endif
+ }
+ 
+ void arm_load_kernel(ARMCPU *cpu, MachineState *ms, struct arm_boot_info *info)
+diff --git a/hw/core/loader.c b/hw/core/loader.c
+index 5cbfba0..86ed831 100644
+--- a/hw/core/loader.c
++++ b/hw/core/loader.c
+@@ -1051,6 +1051,7 @@ static void rom_insert(Rom *rom)
+     QTAILQ_INSERT_TAIL(&roms, rom, next);
+ }
+ 
++#ifndef CONFIG_ZEPHYR
+ static void fw_cfg_resized(const char *id, uint64_t length, void *host)
+ {
+     if (fw_cfg) {
+@@ -1078,6 +1079,8 @@ static void *rom_set_mr(Rom *rom, Object *owner, const char *name, bool ro)
+     return data;
+ }
+ 
++#endif
++
+ ssize_t rom_add_file(const char *file, const char *fw_dir,
+                      hwaddr addr, int32_t bootindex,
+                      bool has_option_rom, MemoryRegion *mr,
+@@ -1089,6 +1092,13 @@ ssize_t rom_add_file(const char *file, const char *fw_dir,
+     g_autoptr(GError) gerr = NULL;
+     char devpath[100];
+ 
++#ifdef CONFIG_ZEPHYR
++    if (fw_dir != NULL) {
++        fprintf(stderr, "Zephyr does not provide a firmware configuration device\n");
++        return -ENOTSUP;
++    }
++#endif
++
+     if (as && mr) {
+         fprintf(stderr, "Specifying an Address Space and Memory Region is " \
+                 "not valid when loading a rom\n");
+@@ -1119,6 +1129,7 @@ ssize_t rom_add_file(const char *file, const char *fw_dir,
+     rom->romsize  = size;
+     rom->datasize = rom->romsize;
+     rom_insert(rom);
++#ifndef CONFIG_ZEPHYR
+     if (rom->fw_file && fw_cfg) {
+         const char *basename;
+         char fw_file_name[FW_CFG_MAX_FILE_PATH];
+@@ -1141,7 +1152,9 @@ ssize_t rom_add_file(const char *file, const char *fw_dir,
+         }
+ 
+         fw_cfg_add_file(fw_cfg, fw_file_name, data, rom->romsize);
+-    } else {
++    } else
++#endif
++    {
+         if (mr) {
+             rom->mr = mr;
+             snprintf(devpath, sizeof(devpath), "/rom@%s", file);
+@@ -1177,6 +1190,9 @@ MemoryRegion *rom_add_blob(const char *name, const void *blob, size_t len,
+     rom->data     = g_malloc0(rom->datasize);
+     memcpy(rom->data, blob, len);
+     rom_insert(rom);
++#ifdef CONFIG_ZEPHYR
++    assert(fw_file_name == NULL);
++#else
+     if (fw_file_name && fw_cfg) {
+         char devpath[100];
+         void *data;
+@@ -1198,6 +1214,7 @@ MemoryRegion *rom_add_blob(const char *name, const void *blob, size_t len,
+                                  fw_callback, NULL, callback_opaque,
+                                  data, rom->datasize, read_only);
+     }
++#endif
+     return mr;
+ }
+ 

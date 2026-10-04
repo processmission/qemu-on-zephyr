@@ -85,6 +85,17 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def patch_series(directory):
+    names = [line.strip() for line in (directory / "series").read_text().splitlines()
+             if line.strip() and not line.lstrip().startswith("#")]
+    if len(names) != len(set(names)) or any(
+            Path(name).name != name or not name.endswith(".patch") for name in names):
+        raise RuntimeError(f"Invalid patch series: {directory}")
+    if set(names) != {p.name for p in directory.glob("*.patch")}:
+        raise RuntimeError(f"Patch series must list every patch exactly once: {directory}")
+    return [directory / name for name in names]
+
+
 def prepare():
     BUILD.mkdir(exist_ok=True)
     with (BUILD / ".prepare.lock").open("w") as lock:
@@ -133,7 +144,7 @@ def prepare_locked():
             archive.unlink()
             patch_dir = ROOT / "patches" / name
             if patch_dir.exists():
-                for patch in sorted(patch_dir.glob("*.patch")):
+                for patch in patch_series(patch_dir):
                     run("patch", "--batch", "--forward", "-p1", "-d", str(destination),
                         "-i", str(patch))
                 shutil.copytree(ROOT / "src" / name, destination, dirs_exist_ok=True)

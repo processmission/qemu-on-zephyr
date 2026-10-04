@@ -1,0 +1,106 @@
+From 3410c857a2f7de70af6db64ff290378c098c6e93 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:53 +0800
+Subject: [PATCH] arch: arm64: use the hypervisor timer for EL2 hosts
+
+Drive host scheduling from CNTHP and the physical counter at EL2.
+Leave the guest virtual timer independent of the host timer driver.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ include/zephyr/arch/arm64/timer.h | 40 ++++++++++++++++++++++++++++++-
+ 1 file changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/include/zephyr/arch/arm64/timer.h b/include/zephyr/arch/arm64/timer.h
+index eadf6f181..0b744b95a 100644
+--- a/include/zephyr/arch/arm64/timer.h
++++ b/include/zephyr/arch/arm64/timer.h
+@@ -18,9 +18,15 @@
+ extern "C" {
+ #endif
+ 
++#if defined(CONFIG_ARM64_EL2)
++#define ARM_ARCH_TIMER_IRQ	ARM_TIMER_HYP_IRQ
++#define ARM_ARCH_TIMER_PRIO	ARM_TIMER_HYP_PRIO
++#define ARM_ARCH_TIMER_FLAGS	ARM_TIMER_HYP_FLAGS
++#else
+ #define ARM_ARCH_TIMER_IRQ	ARM_TIMER_VIRTUAL_IRQ
+ #define ARM_ARCH_TIMER_PRIO	ARM_TIMER_VIRTUAL_PRIO
+ #define ARM_ARCH_TIMER_FLAGS	ARM_TIMER_VIRTUAL_FLAGS
++#endif
+ 
+ static ALWAYS_INLINE void arm_arch_timer_init(void)
+ {
+@@ -35,26 +41,53 @@ static ALWAYS_INLINE void arm_arch_timer_init(void)
+ 
+ static ALWAYS_INLINE void arm_arch_timer_set_compare(uint64_t val)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	write_cnthp_cval_el2(val);
++#else
+ 	write_cntv_cval_el0(val);
++#endif
+ }
+ 
+ static ALWAYS_INLINE void arm_arch_timer_enable(unsigned char enable)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	uint64_t ctl = read_cnthp_ctl_el2();
++
++	if (enable != 0U) {
++		ctl |= CNTHP_CTL_ENABLE_BIT;
++	} else {
++		ctl &= ~CNTHP_CTL_ENABLE_BIT;
++	}
++
++	write_cnthp_ctl_el2(ctl);
++#else
+ 	uint64_t cntv_ctl;
+ 
+ 	cntv_ctl = read_cntv_ctl_el0();
+ 
+-	if (enable) {
++	if (enable != 0U) {
+ 		cntv_ctl |= CNTV_CTL_ENABLE_BIT;
+ 	} else {
+ 		cntv_ctl &= ~CNTV_CTL_ENABLE_BIT;
+ 	}
+ 
+ 	write_cntv_ctl_el0(cntv_ctl);
++#endif
+ }
+ 
+ static ALWAYS_INLINE void arm_arch_timer_set_irq_mask(bool mask)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	uint64_t ctl = read_cnthp_ctl_el2();
++
++	if (mask) {
++		ctl |= CNTHP_CTL_IMASK_BIT;
++	} else {
++		ctl &= ~CNTHP_CTL_IMASK_BIT;
++	}
++
++	write_cnthp_ctl_el2(ctl);
++#else
+ 	uint64_t cntv_ctl;
+ 
+ 	cntv_ctl = read_cntv_ctl_el0();
+@@ -66,11 +99,16 @@ static ALWAYS_INLINE void arm_arch_timer_set_irq_mask(bool mask)
+ 	}
+ 
+ 	write_cntv_ctl_el0(cntv_ctl);
++#endif
+ }
+ 
+ static ALWAYS_INLINE uint64_t arm_arch_timer_count(void)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	return read_cntpct_el0();
++#else
+ 	return read_cntvct_el0();
++#endif
+ }
+ 
+ #ifdef __cplusplus

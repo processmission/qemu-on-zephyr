@@ -1,0 +1,10 @@
+0001-osdep-add-zephyr-host-definitions.patch
+0002-util-allocate-aligned-memory-on-zephyr.patch
+0003-util-resolve-zephyr-executable-and-data-paths.patch
+0004-util-omit-wall-clock-timestamps-on-zephyr.patch
+0005-util-reject-unsupported-zephyr-guest-random-modes.patch
+0006-accel-integrate-the-zephyr-cpu-and-machine-lifecycle.patch
+0007-hw-omit-migration-registration-in-zephyr-device-models.patch
+0008-hw-arm-load-linux-payloads-without-firmware-services.patch
+0009-system-support-preallocated-zephyr-guest-memory.patch
+0010-system-adapt-zephyr-runstate-request-handling.patch

@@ -1,0 +1,108 @@
+From 6f7382b327e6fdfe990884e63f460edee8bcd8f8 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:53 +0800
+Subject: [PATCH] arch: arm64: handle EL2 exceptions and thread state
+
+Save and restore EL2 return state across exceptions and context
+switches. Initialize threads for EL2h and report EL2 fault registers
+through the existing fatal-error path.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ arch/arm64/core/fatal.c        | 9 +++++++++
+ arch/arm64/core/switch.S       | 2 +-
+ arch/arm64/core/thread.c       | 6 +++++-
+ arch/arm64/core/vector_table.S | 9 ++++-----
+ 4 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm64/core/fatal.c b/arch/arm64/core/fatal.c
+index 4eb2a1671..933b59836 100644
+--- a/arch/arm64/core/fatal.c
++++ b/arch/arm64/core/fatal.c
+@@ -552,7 +552,11 @@ static bool is_recoverable(struct arch_esf *esf, uint64_t esr, uint64_t far,
+ #if defined(CONFIG_EXCEPTION_DEBUG) && defined(CONFIG_ARM_MMU)
+ static void dump_ptable_walk(uintptr_t addr)
+ {
++#if defined(CONFIG_ARM64_EL2)
++	uint64_t ttbr0 = read_ttbr0_el2();
++#else
+ 	uint64_t ttbr0 = read_ttbr0_el1();
++#endif
+ 	uint64_t *table = (uint64_t *)(ttbr0 & PTE_PHYSADDR_MASK);
+ 	unsigned int level = BASE_XLAT_LEVEL;
+ 
+@@ -600,6 +604,11 @@ void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf)
+ 			far = read_far_el1();
+ 			elr = read_elr_el1();
+ 			break;
++		case MODE_EL2:
++			esr = read_esr_el2();
++			far = read_far_el2();
++			elr = read_elr_el2();
++			break;
+ #if !defined(CONFIG_ARMV8_R)
+ 		case MODE_EL3:
+ 			esr = read_esr_el3();
+diff --git a/arch/arm64/core/switch.S b/arch/arm64/core/switch.S
+index 688a7a9f7..f9d4e3c21 100644
+--- a/arch/arm64/core/switch.S
++++ b/arch/arm64/core/switch.S
+@@ -173,7 +173,7 @@ SECTION_FUNC(TEXT, z_arm64_sync_exc)
+ 	.cfi_offset 29, (___esf_t_fp_OFFSET - ___esf_t_SIZEOF)
+ #endif
+ 
+-	mrs	x0, esr_el1
++	mrs	x0, Z_ARM64_EXC_ESR_ELN
+ 	lsr	x1, x0, #26
+ 
+ #ifdef CONFIG_FPU_SHARING
+diff --git a/arch/arm64/core/thread.c b/arch/arm64/core/thread.c
+index bf9280830..b76336132 100644
+--- a/arch/arm64/core/thread.c
++++ b/arch/arm64/core/thread.c
+@@ -133,8 +133,12 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
+ 	pInitCtx->elr = (uint64_t)z_thread_entry;
+ #endif
+ 
+-	/* Keep using SP_EL1 */
++	/* Keep using the kernel SP_ELx bank (EL1h normally, EL2h in EL2 host mode). */
++#if defined(CONFIG_ARM64_EL2)
++	pInitCtx->spsr = SPSR_MODE_EL2H | DAIF_FIQ_BIT;
++#else
+ 	pInitCtx->spsr = SPSR_MODE_EL1H | DAIF_FIQ_BIT;
++#endif
+ 
+ 	/* thread birth happens through the exception return path */
+ 	thread->arch.exception_depth = 1;
+diff --git a/arch/arm64/core/vector_table.S b/arch/arm64/core/vector_table.S
+index fe10b8baf..735f9adc7 100644
+--- a/arch/arm64/core/vector_table.S
++++ b/arch/arm64/core/vector_table.S
+@@ -80,8 +80,8 @@ _ASM_FILE_PROLOGUE
+ 	str	x29, [sp, ___esf_t_fp_OFFSET]
+ #endif
+ 
+-	mrs	\xreg0, spsr_el1
+-	mrs	\xreg1, elr_el1
++	mrs	\xreg0, Z_ARM64_EXC_SPSR_ELN
++	mrs	\xreg1, Z_ARM64_EXC_ELR_ELN
+ 	stp	\xreg0, \xreg1, [sp, ___esf_t_spsr_elr_OFFSET]
+ 
+ #ifdef CONFIG_ARM64_SAFE_EXCEPTION_STACK
+@@ -354,8 +354,8 @@ z_arm64_exit_exc_fpu_done:
+ #endif
+ 
+ 	ldp	x0, x1, [sp, ___esf_t_spsr_elr_OFFSET]
+-	msr	spsr_el1, x0
+-	msr	elr_el1, x1
++	msr	Z_ARM64_EXC_SPSR_ELN, x0
++	msr	Z_ARM64_EXC_ELR_ELN, x1
+ 
+ 	/* Restore the kernel/user mode flag and decrement exception depth */
+ 	tst	x0, #SPSR_MODE_MASK	/* EL0 == 0 */
+@@ -400,4 +400,3 @@ z_arm64_exit_exc_fpu_done:
+ 	 */
+ 	.cfi_endproc
+ 	eret
+-

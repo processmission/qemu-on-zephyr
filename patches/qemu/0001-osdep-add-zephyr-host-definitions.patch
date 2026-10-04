@@ -1,0 +1,75 @@
+From 7cdb2d0375e4b29b1067b7d61a873728dae1aa38 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] osdep: add Zephyr host definitions
+
+Use Zephyr host headers and event descriptors without pulling in
+unsupported POSIX facilities. Avoid macro collisions with kernel
+bit helpers while preserving QEMU definitions for other hosts.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ include/qemu/bitops.h         | 7 +++++++
+ include/qemu/event_notifier.h | 2 +-
+ include/qemu/osdep.h          | 8 ++++++++
+ 3 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/include/qemu/bitops.h b/include/qemu/bitops.h
+index f7363a5..60bbf5c 100644
+--- a/include/qemu/bitops.h
++++ b/include/qemu/bitops.h
+@@ -16,6 +16,13 @@
+ #include "host-utils.h"
+ #include "atomic.h"
+ 
++#ifdef CONFIG_ZEPHYR
++#undef BITS_PER_BYTE
++#undef BITS_PER_LONG
++#undef BIT
++#undef BIT_MASK
++#endif
++
+ #define BITS_PER_BYTE           CHAR_BIT
+ #define BITS_PER_LONG           (sizeof (unsigned long) * BITS_PER_BYTE)
+ #define BITS_TO_LONGS(nr)       DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(long))
+diff --git a/include/qemu/event_notifier.h b/include/qemu/event_notifier.h
+index 8a4ff30..a5821bd 100644
+--- a/include/qemu/event_notifier.h
++++ b/include/qemu/event_notifier.h
+@@ -35,7 +35,7 @@ void event_notifier_cleanup(EventNotifier *);
+ int event_notifier_set(EventNotifier *);
+ int event_notifier_test_and_clear(EventNotifier *);
+ 
+-#ifdef CONFIG_POSIX
++#if defined(CONFIG_POSIX) || defined(CONFIG_ZEPHYR)
+ void event_notifier_init_fd(EventNotifier *, int fd);
+ int event_notifier_get_fd(const EventNotifier *);
+ int event_notifier_get_wfd(const EventNotifier *);
+diff --git a/include/qemu/osdep.h b/include/qemu/osdep.h
+index 1ec5b42..cdb007b 100644
+--- a/include/qemu/osdep.h
++++ b/include/qemu/osdep.h
+@@ -185,6 +185,10 @@ QEMU_EXTERN_C int daemon(int, int);
+ #include "system/os-wasm.h"
+ #endif
+ 
++#ifdef CONFIG_ZEPHYR
++#include "os-zephyr.h"
++#endif
++
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+@@ -779,7 +783,11 @@ char *qemu_get_pid_name(pid_t pid);
+  */
+ static inline uintptr_t qemu_real_host_page_size(void)
+ {
++#ifdef CONFIG_ZEPHYR
++    return CONFIG_MMU_PAGE_SIZE;
++#else
+     return getpagesize();
++#endif
+ }
+ 
+ static inline intptr_t qemu_real_host_page_mask(void)

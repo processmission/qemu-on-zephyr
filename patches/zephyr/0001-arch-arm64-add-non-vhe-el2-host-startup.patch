@@ -1,0 +1,196 @@
+From ba1d2b5c9d61eb76799184e0a9c1e42f066c7bbb Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:53 +0800
+Subject: [PATCH] arch: arm64: add non-VHE EL2 host startup
+
+Allow the ARM64 kernel to remain at non-VHE EL2. Select the EL2
+stack, vectors and control-register accessors while preserving the
+default EL1 boot path and excluding unsupported configurations.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ arch/arm64/core/Kconfig                 | 19 +++++++++++++++++++
+ arch/arm64/core/reset.S                 | 15 +++++++++++++--
+ arch/arm64/core/reset.c                 | 18 ++++++++++++++++++
+ include/zephyr/arch/arm64/cpu.h         | 19 +++++++++++++++++++
+ include/zephyr/arch/arm64/lib_helpers.h |  2 ++
+ 5 files changed, 71 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/core/Kconfig b/arch/arm64/core/Kconfig
+index 8c0645333..152df7f80 100644
+--- a/arch/arm64/core/Kconfig
++++ b/arch/arm64/core/Kconfig
+@@ -218,6 +218,25 @@ config ARM64_STACK_PROTECTION
+ 
+ if CPU_CORTEX_A
+ 
++config ARM64_EL2
++	bool "Run Zephyr at AArch64 EL2 (non-VHE)"
++	default n
++	select ARMV8_A_NS
++	depends on !USERSPACE
++	depends on !SMP
++	depends on !ARM_PAC
++	depends on !ARM64_SVE
++	depends on !ARM64_SAFE_EXCEPTION_STACK
++	help
++	  Run Zephyr as the host at AArch64 Exception Level 2 without the
++	  Virtualization Host Extensions (VHE).  The kernel uses SP_EL2 and
++	  VBAR_EL2 with a non-VHE EL2 stage-1 translation regime.
++
++	  This option forces the non-secure state and excludes unsupported
++	  combinations: userspace, SMP, PAC, SVE and the safe exception stack.
++
++rsource "hypervisor/Kconfig"
++
+ config ARCH_HAS_STACKWALK
+ 	bool
+ 	default y
+diff --git a/arch/arm64/core/reset.S b/arch/arm64/core/reset.S
+index 929e98601..a0699aea7 100644
+--- a/arch/arm64/core/reset.S
++++ b/arch/arm64/core/reset.S
+@@ -53,7 +53,6 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__reset_prep_c)
+ 	/* Custom plat prep_c init */
+ 	bl	z_arm64_el3_plat_prep_c
+ 
+-	/* Set SP_EL1 */
+ 	msr     sp_el1, x24
+ 
+ 	b	out
+@@ -68,7 +67,6 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__reset_prep_c)
+ 	/* Custom plat prep_c init */
+ 	bl	z_arm64_el2_plat_prep_c
+ 
+-	/* Set SP_EL1 */
+ 	msr     sp_el1, x24
+ 
+ 	b	out
+@@ -235,6 +233,16 @@ switch_el:
+ 	/* EL2 init */
+ 	bl	z_arm64_el2_init
+ 
++	/* EL2 host stays at EL2.  Switch from the early SP_EL0 stack to
++	 * SP_EL2 only after z_arm64_el2_init() has finished, then enter
++	 * the common kernel entry tail below.
++	 */
++#if defined(CONFIG_ARM64_EL2)
++	msr	SPSel, #1
++	mov	sp, x24
++	b	1f
++#endif
++
+ 	/* Move to EL1 with all exceptions masked */
+ 	mov_imm	x0, (SPSR_DAIF_MASK | SPSR_MODE_EL1T)
+ 	msr	spsr_el2, x0
+@@ -244,8 +252,11 @@ switch_el:
+ 	eret
+ 
+ 1:
++	/* EL1 init (not run when Zephyr is the EL2 host). */
++#if !defined(CONFIG_ARM64_EL2)
+ 	/* EL1 init */
+ 	bl	z_arm64_el1_init
++#endif
+ 
+ 	/* We want to use SP_ELx from now on */
+ 	msr	SPSel, #1
+diff --git a/arch/arm64/core/reset.c b/arch/arm64/core/reset.c
+index c4037771a..9e8022fbd 100644
+--- a/arch/arm64/core/reset.c
++++ b/arch/arm64/core/reset.c
+@@ -154,6 +154,12 @@ void z_arm64_el2_init(void)
+ {
+ 	uint64_t reg;
+ 
++#ifdef CONFIG_ARM64_EL2
++	/* Exceptions taken while Zephyr runs at EL2 must use VBAR_EL2. */
++	write_vbar_el2((uint64_t)_vector_table);
++	barrier_isync_fence_full();
++#endif
++
+ 	reg = read_sctlr_el2();
+ #ifdef CONFIG_ARM64_BOOT_DISABLE_DCACHE
+ 	/* Disable D-Cache if it is enabled, it will re-enabled when MMU is enabled at EL1 */
+@@ -187,6 +193,17 @@ void z_arm64_el2_init(void)
+ #endif
+ 
+ 	reg = read_hcr_el2();
++#ifdef CONFIG_ARM64_EL2
++	/*
++	 * EL2 host: route physical IRQs and SErrors to EL2 so the
++	 * architecture interrupt controller and fatal handlers execute at
++	 * the level where Zephyr is running.  RW=1 keeps any future lower
++	 * EL in AArch64 state.  VHE is not used (Cortex-A53 has no VHE).
++	 */
++	reg |= (HCR_IMO_BIT | HCR_AMO_BIT);
++	reg &= ~HCR_TGE_BIT;
++	reg |= HCR_RW_BIT;
++#else
+ 	/* when EL2 is enable in current security status:
+ 	 * Clear TGE bit: All exceptions that would not be routed to EL2;
+ 	 * Clear AMO bit: Physical SError interrupts are not taken to EL2 and EL3.
+@@ -194,6 +211,7 @@ void z_arm64_el2_init(void)
+ 	 */
+ 	reg &= ~(HCR_IMO_BIT | HCR_AMO_BIT | HCR_TGE_BIT);
+ 	reg |= HCR_RW_BIT;		/* EL1 Execution state is AArch64 */
++#endif
+ 
+ #ifdef CONFIG_ARM_PAC
+ 	/* Do not trap pointer authentication instructions and key registers */
+diff --git a/include/zephyr/arch/arm64/cpu.h b/include/zephyr/arch/arm64/cpu.h
+index 77d3a9685..b6e11cebf 100644
+--- a/include/zephyr/arch/arm64/cpu.h
++++ b/include/zephyr/arch/arm64/cpu.h
+@@ -37,6 +37,23 @@
+ #define SPSR_MODE_EL2H		(0x9)
+ #define SPSR_MODE_MASK		(0xf)
+ 
++/*
++ * The exception return/syndrome registers used by the kernel current-EL
++ * exception path. When Zephyr runs as the non-VHE EL2 host, the current
++ * exception level is EL2 and the EL2 register bank must be used.
++ */
++#if defined(CONFIG_ARM64_EL2)
++#define Z_ARM64_EXC_SPSR_ELN	spsr_el2
++#define Z_ARM64_EXC_ELR_ELN	elr_el2
++#define Z_ARM64_EXC_ESR_ELN	esr_el2
++#define Z_ARM64_EXC_FAR_ELN	far_el2
++#else
++#define Z_ARM64_EXC_SPSR_ELN	spsr_el1
++#define Z_ARM64_EXC_ELR_ELN	elr_el1
++#define Z_ARM64_EXC_ESR_ELN	esr_el1
++#define Z_ARM64_EXC_FAR_ELN	far_el1
++#endif
++
+ 
+ #define SCTLR_EL3_RES1		(BIT(29) | BIT(28) | BIT(23) | \
+ 				 BIT(22) | BIT(18) | BIT(16) | \
+@@ -115,6 +132,8 @@
+ 
+ #define CNTV_CTL_ENABLE_BIT	BIT(0)
+ #define CNTV_CTL_IMASK_BIT	BIT(1)
++#define CNTHP_CTL_ENABLE_BIT	BIT(0)
++#define CNTHP_CTL_IMASK_BIT	BIT(1)
+ 
+ #define ID_AA64PFR0_EL0_SHIFT	(0)
+ #define ID_AA64PFR0_EL1_SHIFT	(4)
+diff --git a/include/zephyr/arch/arm64/lib_helpers.h b/include/zephyr/arch/arm64/lib_helpers.h
+index 22c8cccf6..4d7675287 100644
+--- a/include/zephyr/arch/arm64/lib_helpers.h
++++ b/include/zephyr/arch/arm64/lib_helpers.h
+@@ -61,11 +61,13 @@ MAKE_REG_HELPER(clidr_el1);
+ MAKE_REG_HELPER(cntfrq_el0);
+ MAKE_REG_HELPER(cnthctl_el2);
+ MAKE_REG_HELPER(cnthp_ctl_el2);
++MAKE_REG_HELPER(cnthp_cval_el2);
+ MAKE_REG_HELPER(cnthps_ctl_el2);
+ MAKE_REG_HELPER(cntv_ctl_el0)
+ MAKE_REG_HELPER(cntv_cval_el0)
+ MAKE_REG_HELPER(cntp_cval_el0)
+ MAKE_REG_HELPER(cntps_cval_el1)
++MAKE_REG_HELPER(cntpct_el0);
+ MAKE_REG_HELPER(cntvct_el0);
+ MAKE_REG_HELPER(cntvoff_el2);
+ MAKE_REG_HELPER(currentel);

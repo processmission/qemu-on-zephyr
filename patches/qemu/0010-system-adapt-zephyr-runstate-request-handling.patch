@@ -1,0 +1,98 @@
+From 2d643a9744923ac4bc10b97c8c4f0e99ccfe75aa Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Date: Sun, 4 Oct 2026 16:03:52 +0800
+Subject: [PATCH] system: adapt Zephyr runstate request handling
+
+Handle guest shutdown and reset requests through the Zephyr model
+owner without depending on absent monitor and process services.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+
+---
+ system/runstate.c | 21 ++++++++++++++++++++-
+ 1 file changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/system/runstate.c b/system/runstate.c
+index d3e64d2..f4ed8fd 100644
+--- a/system/runstate.c
++++ b/system/runstate.c
+@@ -47,7 +47,9 @@
+ #include "qemu/job.h"
+ #include "qemu/log.h"
+ #include "qemu/module.h"
++#ifndef CONFIG_ZEPHYR
+ #include "qemu/sockets.h"
++#endif
+ #include "qemu/timer.h"
+ #include "qemu/thread.h"
+ #include "qom/object.h"
+@@ -442,6 +444,7 @@ static int do_vm_stop(RunState state, bool send_stop)
+         }
+     }
+ 
++#ifndef CONFIG_ZEPHYR
+     bdrv_drain_all();
+     /*
+      * Even if vm_state_notify() return failure,
+@@ -449,6 +452,7 @@ static int do_vm_stop(RunState state, bool send_stop)
+      */
+     ret |= bdrv_flush_all();
+     trace_vm_stop_flush_all(ret);
++#endif
+ 
+     return ret;
+ }
+@@ -548,9 +552,10 @@ int vm_stop_force_state(RunState state)
+     if (runstate_is_live(runstate_get())) {
+         return vm_stop(state);
+     } else {
+-        int ret;
++        int ret = 0;
+         runstate_set(state);
+ 
++#ifndef CONFIG_ZEPHYR
+         bdrv_drain_all();
+         /*
+          * Make sure to return an error if the flush in a previous vm_stop()
+@@ -558,6 +563,7 @@ int vm_stop_force_state(RunState state)
+          */
+         ret = bdrv_flush_all();
+         trace_vm_stop_flush_all(ret);
++#endif
+         return ret;
+     }
+ }
+@@ -1096,6 +1102,13 @@ static bool main_loop_should_exit(int *status)
+     return false;
+ }
+ 
++#ifdef CONFIG_ZEPHYR
++bool qemu_zephyr_process_requests(int *status)
++{
++    return main_loop_should_exit(status);
++}
++#endif
++
+ int qemu_main_loop(void)
+ {
+     int status = EXIT_SUCCESS;
+@@ -1125,6 +1138,11 @@ static void qemu_run_exit_notifiers(void)
+ 
+ void qemu_init_subsystems(void)
+ {
++#ifdef CONFIG_ZEPHYR
++    qemu_zephyr_os_init();
++    module_call_init(MODULE_INIT_QOM);
++    runstate_init();
++#else
+     Error *err = NULL;
+ 
+     os_set_line_buffering();
+@@ -1154,6 +1172,7 @@ void qemu_init_subsystems(void)
+ 
+     bdrv_init_with_whitelist();
+     socket_init();
++#endif
+ }
+ 
+ 
