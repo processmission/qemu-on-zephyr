@@ -1,0 +1,12 @@
+[submodule "upstream/qemu"]
+	path = upstream/qemu
+	url = https://github.com/qemu/qemu.git
+[submodule "upstream/zephyr"]
+	path = upstream/zephyr
+	url = https://github.com/zephyrproject-rtos/zephyr.git
+[submodule "upstream/dtc"]
+	path = upstream/dtc
+	url = https://gitlab.com/qemu-project/dtc.git
+[submodule "upstream/zlib"]
+	path = upstream/zlib
+	url = https://github.com/madler/zlib.git

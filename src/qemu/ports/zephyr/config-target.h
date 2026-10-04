@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+#ifndef QEMU_ZEPHYR_CONFIG_TARGET_H
+#define QEMU_ZEPHYR_CONFIG_TARGET_H
+
+#define CONFIG_SOFTMMU 1
+#define CONFIG_SYSTEM_ONLY 1
+#define TARGET_AARCH64 1
+#define TARGET_ARM 1
+#define TARGET_ARCH AARCH64
+#define TARGET_BIG_ENDIAN 0
+#define TARGET_LONG_BITS 64
+#define TARGET_NAME "aarch64"
+#define TARGET_NEED_FDT 1
+
+#endif

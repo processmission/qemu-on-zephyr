@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+menuconfig QEMU
+	bool "QEMU system emulation subsystem"
+	depends on ARM64
+	select REQUIRES_FULL_LIBC
+	select STATIC_INIT_GNU
+	select THREAD_LOCAL_STORAGE
+	help
+	  Build QEMU object, device and memory models for native execution
+	  hosted by Zephyr. The initial platform has one ARM64 virtual CPU.
+
+if QEMU
+
+config QEMU_ZEPHYR_ACCEL
+	bool "Native ARM64 virtualization accelerator"
+	depends on ARM64_HYPERVISOR && !SMP
+	help
+	  Run a single ARM64 virtual CPU with the Zephyr EL2 executor and
+	  QEMU's ARM CPU, interrupt controller and Linux boot models.
+
+config QEMU_NATIVE_PROBE_ONLY
+	bool "Stop after the native CPU and PL011 integration probe"
+	depends on QEMU_ZEPHYR_ACCEL
+	help
+	  Exercise the native accelerator and real QEMU device models without
+	  mounting or starting a Linux image. This is an intermediate diagnostic.
+
+config QEMU_HOST_HEARTBEAT
+	bool "Print an independent host-thread scheduling diagnostic"
+	depends on QEMU_ZEPHYR_ACCEL
+	help
+	  The Linux test application starts a higher-priority Zephyr thread
+	  which reports its progress while the virtual CPU is running.
+
+config QEMU_PL011_PROBE
+	bool "PL011 object and memory dispatch probe"
+	help
+	  Exercise the real QEMU PL011 model through QOM, qdev and its
+	  MemoryRegion register interface before starting a virtual CPU.
+
+endif

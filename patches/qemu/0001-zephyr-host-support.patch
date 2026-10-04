@@ -1,0 +1,778 @@
+diff --git a/chardev/char.c b/chardev/char.c
+index 9da0911e50..c581c3e471 100644
+--- a/chardev/char.c
++++ b/chardev/char.c
+@@ -92,6 +92,7 @@ static void do_write_log(Chardev *s, const uint8_t *buf, size_t len)
+     }
+ }
+ 
++#ifndef CONFIG_ZEPHYR
+ static void do_write_log_timestamps(Chardev *s, const uint8_t *buf, size_t len)
+ {
+     g_autofree char *timestr = NULL;
+@@ -128,17 +129,24 @@ static void do_write_log_timestamps(Chardev *s, const uint8_t *buf, size_t len)
+     }
+ }
+ 
++#endif
++
+ static void qemu_chr_write_log(Chardev *s, const uint8_t *buf, size_t len)
+ {
+     if (s->logfd < 0) {
+         return;
+     }
+ 
++#ifdef CONFIG_ZEPHYR
++    assert(!s->logtimestamp);
++    do_write_log(s, buf, len);
++#else
+     if (s->logtimestamp) {
+         do_write_log_timestamps(s, buf, len);
+     } else {
+         do_write_log(s, buf, len);
+     }
++#endif
+ }
+ 
+ static int qemu_chr_write_buffer(Chardev *s,
+diff --git a/hw/arm/boot.c b/hw/arm/boot.c
+index 9b7553dde5..14f13a1c8c 100644
+--- a/hw/arm/boot.c
++++ b/hw/arm/boot.c
+@@ -1114,6 +1114,10 @@ static void arm_setup_direct_kernel_boot(ARMCPU *cpu,
+ 
+ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
+ {
++#ifdef CONFIG_ZEPHYR
++    error_report("Zephyr ARM virt requires a direct kernel image");
++    abort();
++#else
+     /* Set up for booting firmware (which might load a kernel via fw_cfg) */
+ 
+     if (have_dtb(info)) {
+@@ -1173,6 +1177,7 @@ static void arm_setup_firmware_boot(ARMCPU *cpu, struct arm_boot_info *info)
+      * same way as hardware. Leave env->boot_info NULL, so that
+      * do_cpu_reset() knows it does not need to alter the PC on reset.
+      */
++#endif
+ }
+ 
+ void arm_load_kernel(ARMCPU *cpu, MachineState *ms, struct arm_boot_info *info)
+diff --git a/hw/char/pl011.c b/hw/char/pl011.c
+index 5ad9e7358d..0522180905 100644
+--- a/hw/char/pl011.c
++++ b/hw/char/pl011.c
+@@ -566,6 +566,7 @@ static const MemoryRegionOps pl011_ops = {
+     .impl.max_access_size = 4,
+ };
+ 
++#ifndef CONFIG_ZEPHYR
+ static bool pl011_clock_needed(void *opaque)
+ {
+     PL011State *s = PL011(opaque);
+@@ -641,6 +642,8 @@ static const VMStateDescription vmstate_pl011 = {
+     }
+ };
+ 
++#endif
++
+ static const Property pl011_properties[] = {
+     DEFINE_PROP_CHR("chardev", PL011State, chr),
+     DEFINE_PROP_BOOL("migrate-clk", PL011State, migrate_clk, true),
+@@ -716,7 +719,9 @@ static void pl011_class_init(ObjectClass *oc, const void *data)
+ 
+     dc->realize = pl011_realize;
+     device_class_set_legacy_reset(dc, pl011_reset);
++#ifndef CONFIG_ZEPHYR
+     dc->vmsd = &vmstate_pl011;
++#endif
+     device_class_set_props(dc, pl011_properties);
+ }
+ 
+diff --git a/hw/core/cpu-common.c b/hw/core/cpu-common.c
+index 4f4c87f33a..0ae2101c3f 100644
+--- a/hw/core/cpu-common.c
++++ b/hw/core/cpu-common.c
+@@ -235,12 +235,16 @@ bool cpu_common_realize(CPUState *cpu, Error **errp)
+         return false;
+     }
+ 
++#ifndef CONFIG_ZEPHYR
+     gdb_init_cpu(cpu);
++#endif
+ 
+     /* Wait until cpu initialization complete before exposing cpu. */
+     cpu_list_add(cpu);
+ 
++#ifndef CONFIG_ZEPHYR
+     cpu_vmstate_register(cpu);
++#endif
+ 
+     return true;
+ }
+@@ -269,7 +273,9 @@ static void cpu_common_unrealizefn(DeviceState *dev)
+ 
+ void cpu_common_unrealize(CPUState *cpu)
+ {
++#ifndef CONFIG_ZEPHYR
+     cpu_vmstate_unregister(cpu);
++#endif
+ 
+     cpu_list_remove(cpu);
+     /*
+diff --git a/hw/core/loader.c b/hw/core/loader.c
+index 5cbfba0a86..86ed831d46 100644
+--- a/hw/core/loader.c
++++ b/hw/core/loader.c
+@@ -1051,6 +1051,7 @@ static void rom_insert(Rom *rom)
+     QTAILQ_INSERT_TAIL(&roms, rom, next);
+ }
+ 
++#ifndef CONFIG_ZEPHYR
+ static void fw_cfg_resized(const char *id, uint64_t length, void *host)
+ {
+     if (fw_cfg) {
+@@ -1078,6 +1079,8 @@ static void *rom_set_mr(Rom *rom, Object *owner, const char *name, bool ro)
+     return data;
+ }
+ 
++#endif
++
+ ssize_t rom_add_file(const char *file, const char *fw_dir,
+                      hwaddr addr, int32_t bootindex,
+                      bool has_option_rom, MemoryRegion *mr,
+@@ -1089,6 +1092,13 @@ ssize_t rom_add_file(const char *file, const char *fw_dir,
+     g_autoptr(GError) gerr = NULL;
+     char devpath[100];
+ 
++#ifdef CONFIG_ZEPHYR
++    if (fw_dir != NULL) {
++        fprintf(stderr, "Zephyr does not provide a firmware configuration device\n");
++        return -ENOTSUP;
++    }
++#endif
++
+     if (as && mr) {
+         fprintf(stderr, "Specifying an Address Space and Memory Region is " \
+                 "not valid when loading a rom\n");
+@@ -1119,6 +1129,7 @@ ssize_t rom_add_file(const char *file, const char *fw_dir,
+     rom->romsize  = size;
+     rom->datasize = rom->romsize;
+     rom_insert(rom);
++#ifndef CONFIG_ZEPHYR
+     if (rom->fw_file && fw_cfg) {
+         const char *basename;
+         char fw_file_name[FW_CFG_MAX_FILE_PATH];
+@@ -1141,7 +1152,9 @@ ssize_t rom_add_file(const char *file, const char *fw_dir,
+         }
+ 
+         fw_cfg_add_file(fw_cfg, fw_file_name, data, rom->romsize);
+-    } else {
++    } else
++#endif
++    {
+         if (mr) {
+             rom->mr = mr;
+             snprintf(devpath, sizeof(devpath), "/rom@%s", file);
+@@ -1177,6 +1190,9 @@ MemoryRegion *rom_add_blob(const char *name, const void *blob, size_t len,
+     rom->data     = g_malloc0(rom->datasize);
+     memcpy(rom->data, blob, len);
+     rom_insert(rom);
++#ifdef CONFIG_ZEPHYR
++    assert(fw_file_name == NULL);
++#else
+     if (fw_file_name && fw_cfg) {
+         char devpath[100];
+         void *data;
+@@ -1198,6 +1214,7 @@ MemoryRegion *rom_add_blob(const char *name, const void *blob, size_t len,
+                                  fw_callback, NULL, callback_opaque,
+                                  data, rom->datasize, read_only);
+     }
++#endif
+     return mr;
+ }
+ 
+diff --git a/hw/core/machine.c b/hw/core/machine.c
+index 8939ae1666..04d0bce57f 100644
+--- a/hw/core/machine.c
++++ b/hw/core/machine.c
+@@ -1502,6 +1502,10 @@ static void validate_cpu_cluster_to_numa_boundary(MachineState *ms)
+ MemoryRegion *machine_consume_memdev(MachineState *machine,
+                                      HostMemoryBackend *backend)
+ {
++#ifdef CONFIG_ZEPHYR
++    error_report("Zephyr machine RAM must be borrowed from its native accelerator");
++    abort();
++#else
+     MemoryRegion *ret = host_memory_backend_get_memory(backend);
+ 
+     if (host_memory_backend_is_mapped(backend)) {
+@@ -1512,6 +1516,7 @@ MemoryRegion *machine_consume_memdev(MachineState *machine,
+     host_memory_backend_set_mapped(backend, true);
+     vmstate_register_ram_global(ret);
+     return ret;
++#endif
+ }
+ 
+ const char *machine_class_default_cpu_type(MachineClass *mc)
+@@ -1784,7 +1789,9 @@ void qdev_machine_creation_done(void)
+        clock values from the log. */
+     replay_checkpoint(CHECKPOINT_RESET);
+     qemu_system_reset(SHUTDOWN_CAUSE_NONE);
++#ifndef CONFIG_ZEPHYR
+     register_global_state();
++#endif
+ }
+ 
+ static const TypeInfo machine_info = {
+diff --git a/hw/intc/arm_gicv3_common.c b/hw/intc/arm_gicv3_common.c
+index f7ba74e6d5..c6c559e542 100644
+--- a/hw/intc/arm_gicv3_common.c
++++ b/hw/intc/arm_gicv3_common.c
+@@ -36,6 +36,7 @@
+ #include "system/hvf.h"
+ 
+ 
++#ifndef CONFIG_ZEPHYR
+ static void gicv3_gicd_no_migration_shift_bug_post_load(GICv3State *cs)
+ {
+     if (cs->gicd_no_migration_shift_bug) {
+@@ -311,6 +312,8 @@ static const VMStateDescription vmstate_gicv3 = {
+     }
+ };
+ 
++#endif
++
+ void gicv3_init_irqs_and_mmio(GICv3State *s, qemu_irq_handler handler,
+                               const MemoryRegionOps *ops)
+ {
+@@ -630,7 +633,9 @@ static void arm_gicv3_common_class_init(ObjectClass *klass, const void *data)
+     rc->phases.hold = arm_gicv3_common_reset_hold;
+     dc->realize = arm_gicv3_common_realize;
+     device_class_set_props(dc, arm_gicv3_common_properties);
++#ifndef CONFIG_ZEPHYR
+     dc->vmsd = &vmstate_gicv3;
++#endif
+     albifc->arm_linux_init = arm_gic_common_linux_init;
+ }
+ 
+diff --git a/include/hw/core/cpu.h b/include/hw/core/cpu.h
+index 328e30045c..c780ecaceb 100644
+--- a/include/hw/core/cpu.h
++++ b/include/hw/core/cpu.h
+@@ -509,7 +509,11 @@ struct CPUState {
+     int64_t icount_budget;
+     int64_t icount_extra;
+     uint64_t random_seed;
++#ifdef CONFIG_ZEPHYR
++    jmp_buf jmp_env;
++#else
+     sigjmp_buf jmp_env;
++#endif
+ 
+     QemuMutex work_mutex;
+     QSIMPLEQ_HEAD(, qemu_work_item) work_list;
+diff --git a/include/qemu/bitops.h b/include/qemu/bitops.h
+index f7363a5479..60bbf5cda7 100644
+--- a/include/qemu/bitops.h
++++ b/include/qemu/bitops.h
+@@ -16,6 +16,13 @@
+ #include "host-utils.h"
+ #include "atomic.h"
+ 
++#ifdef CONFIG_ZEPHYR
++#undef BITS_PER_BYTE
++#undef BITS_PER_LONG
++#undef BIT
++#undef BIT_MASK
++#endif
++
+ #define BITS_PER_BYTE           CHAR_BIT
+ #define BITS_PER_LONG           (sizeof (unsigned long) * BITS_PER_BYTE)
+ #define BITS_TO_LONGS(nr)       DIV_ROUND_UP(nr, BITS_PER_BYTE * sizeof(long))
+diff --git a/include/qemu/event_notifier.h b/include/qemu/event_notifier.h
+index 8a4ff308e1..a5821bde30 100644
+--- a/include/qemu/event_notifier.h
++++ b/include/qemu/event_notifier.h
+@@ -35,7 +35,7 @@ void event_notifier_cleanup(EventNotifier *);
+ int event_notifier_set(EventNotifier *);
+ int event_notifier_test_and_clear(EventNotifier *);
+ 
+-#ifdef CONFIG_POSIX
++#if defined(CONFIG_POSIX) || defined(CONFIG_ZEPHYR)
+ void event_notifier_init_fd(EventNotifier *, int fd);
+ int event_notifier_get_fd(const EventNotifier *);
+ int event_notifier_get_wfd(const EventNotifier *);
+diff --git a/include/qemu/osdep.h b/include/qemu/osdep.h
+index 1ec5b42230..cdb007b078 100644
+--- a/include/qemu/osdep.h
++++ b/include/qemu/osdep.h
+@@ -185,6 +185,10 @@ QEMU_EXTERN_C int daemon(int, int);
+ #include "system/os-wasm.h"
+ #endif
+ 
++#ifdef CONFIG_ZEPHYR
++#include "os-zephyr.h"
++#endif
++
+ #ifdef __cplusplus
+ extern "C" {
+ #endif
+@@ -779,7 +783,11 @@ char *qemu_get_pid_name(pid_t pid);
+  */
+ static inline uintptr_t qemu_real_host_page_size(void)
+ {
++#ifdef CONFIG_ZEPHYR
++    return CONFIG_MMU_PAGE_SIZE;
++#else
+     return getpagesize();
++#endif
+ }
+ 
+ static inline intptr_t qemu_real_host_page_mask(void)
+diff --git a/include/system/hw_accel.h b/include/system/hw_accel.h
+index f0c10b6d80..1c7c123944 100644
+--- a/include/system/hw_accel.h
++++ b/include/system/hw_accel.h
+@@ -18,6 +18,9 @@
+ #include "system/whpx.h"
+ #include "system/nvmm.h"
+ #include "system/nitro-accel.h"
++#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
++#include "system/zephyr.h"
++#endif
+ 
+ /**
+  * cpu_synchronize_state:
+@@ -48,6 +51,11 @@ void cpu_synchronize_post_init(CPUState *cpu);
+  */
+ static inline bool hwaccel_enabled(void)
+ {
++#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
++    if (zephyr_enabled()) {
++        return true;
++    }
++#endif
+     return hvf_enabled()
+         || kvm_enabled()
+         || nvmm_enabled()
+diff --git a/system/cpu-timers.c b/system/cpu-timers.c
+index 9919b46230..ac42fb4c3a 100644
+--- a/system/cpu-timers.c
++++ b/system/cpu-timers.c
+@@ -271,5 +271,7 @@ void cpu_timers_init(void)
+ {
+     seqlock_init(&timers_state.vm_clock_seqlock);
+     qemu_spin_init(&timers_state.vm_clock_lock);
++#ifndef CONFIG_ZEPHYR
+     vmstate_register(NULL, 0, &vmstate_timers, &timers_state);
++#endif
+ }
+diff --git a/system/cpus.c b/system/cpus.c
+index e11a5aab6a..28cfaabc2e 100644
+--- a/system/cpus.c
++++ b/system/cpus.c
+@@ -428,7 +428,10 @@ void cpus_kick_thread(CPUState *cpu)
+     }
+     qatomic_set(&cpu->thread_kicked, true);
+ 
+-#ifndef _WIN32
++#if defined(CONFIG_ZEPHYR)
++    /* Native accelerators install a non-signal kick callback. */
++    g_assert_not_reached();
++#elif !defined(_WIN32)
+     int err = pthread_kill(cpu->thread->thread, SIG_IPI);
+     if (err && err != ESRCH) {
+         fprintf(stderr, "qemu:%s: %s", __func__, strerror(err));
+diff --git a/system/physmem.c b/system/physmem.c
+index a4a6a4710c..389d027530 100644
+--- a/system/physmem.c
++++ b/system/physmem.c
+@@ -2601,8 +2601,10 @@ void qemu_ram_free(RAMBlock *block)
+     }
+ 
+     qemu_mutex_lock_ramlist();
++#ifndef CONFIG_ZEPHYR
+     name = cpr_name(block->mr);
+     cpr_delete_fd(name, 0);
++#endif
+     QLIST_REMOVE_RCU(block, next);
+     qatomic_set(&ram_list.mru_block, NULL);
+     /* Write list before version */
+@@ -2616,6 +2618,9 @@ void qemu_ram_free(RAMBlock *block)
+ /* Simply remap the given VM memory location from start to start+length */
+ static int qemu_ram_remap_mmap(RAMBlock *block, uint64_t start, size_t length)
+ {
++#ifdef CONFIG_ZEPHYR
++    return -ENOTSUP;
++#else
+     int flags, prot;
+     void *area;
+     void *host_startaddr = block->host + start;
+@@ -2628,6 +2633,7 @@ static int qemu_ram_remap_mmap(RAMBlock *block, uint64_t start, size_t length)
+     prot |= block->flags & RAM_READONLY ? 0 : PROT_WRITE;
+     area = mmap(host_startaddr, length, prot, flags, -1, 0);
+     return area != host_startaddr ? -errno : 0;
++#endif
+ }
+ 
+ /*
+diff --git a/system/runstate.c b/system/runstate.c
+index d3e64d2b62..f4ed8fdb0d 100644
+--- a/system/runstate.c
++++ b/system/runstate.c
+@@ -47,7 +47,9 @@
+ #include "qemu/job.h"
+ #include "qemu/log.h"
+ #include "qemu/module.h"
++#ifndef CONFIG_ZEPHYR
+ #include "qemu/sockets.h"
++#endif
+ #include "qemu/timer.h"
+ #include "qemu/thread.h"
+ #include "qom/object.h"
+@@ -442,6 +444,7 @@ static int do_vm_stop(RunState state, bool send_stop)
+         }
+     }
+ 
++#ifndef CONFIG_ZEPHYR
+     bdrv_drain_all();
+     /*
+      * Even if vm_state_notify() return failure,
+@@ -449,6 +452,7 @@ static int do_vm_stop(RunState state, bool send_stop)
+      */
+     ret |= bdrv_flush_all();
+     trace_vm_stop_flush_all(ret);
++#endif
+ 
+     return ret;
+ }
+@@ -548,9 +552,10 @@ int vm_stop_force_state(RunState state)
+     if (runstate_is_live(runstate_get())) {
+         return vm_stop(state);
+     } else {
+-        int ret;
++        int ret = 0;
+         runstate_set(state);
+ 
++#ifndef CONFIG_ZEPHYR
+         bdrv_drain_all();
+         /*
+          * Make sure to return an error if the flush in a previous vm_stop()
+@@ -558,6 +563,7 @@ int vm_stop_force_state(RunState state)
+          */
+         ret = bdrv_flush_all();
+         trace_vm_stop_flush_all(ret);
++#endif
+         return ret;
+     }
+ }
+@@ -1096,6 +1102,13 @@ static bool main_loop_should_exit(int *status)
+     return false;
+ }
+ 
++#ifdef CONFIG_ZEPHYR
++bool qemu_zephyr_process_requests(int *status)
++{
++    return main_loop_should_exit(status);
++}
++#endif
++
+ int qemu_main_loop(void)
+ {
+     int status = EXIT_SUCCESS;
+@@ -1125,6 +1138,11 @@ static void qemu_run_exit_notifiers(void)
+ 
+ void qemu_init_subsystems(void)
+ {
++#ifdef CONFIG_ZEPHYR
++    qemu_zephyr_os_init();
++    module_call_init(MODULE_INIT_QOM);
++    runstate_init();
++#else
+     Error *err = NULL;
+ 
+     os_set_line_buffering();
+@@ -1154,6 +1172,7 @@ void qemu_init_subsystems(void)
+ 
+     bdrv_init_with_whitelist();
+     socket_init();
++#endif
+ }
+ 
+ 
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 77aa78f00e..9693e184a9 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -26,6 +26,7 @@
+ #include "system/whpx.h"
+ #include "target/arm/tcg/idau.h"
+ #include "qemu/module.h"
++#include "qemu/accel.h"
+ #include "qapi/error.h"
+ #include "cpu.h"
+ #ifdef CONFIG_TCG
+@@ -2395,8 +2396,10 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
+ #endif
+ 
+     register_cp_regs_for_features(cpu);
++#ifndef CONFIG_ZEPHYR
+     arm_cpu_register_gdb_regs_for_features(cpu);
+     arm_cpu_register_gdb_commands(cpu);
++#endif
+ 
+     arm_init_cpreg_list(cpu);
+ 
+@@ -2497,6 +2500,7 @@ static const Property arm_cpu_properties[] = {
+                       backcompat_pauth_default_use_qarma5, false),
+ };
+ 
++#ifndef CONFIG_ZEPHYR
+ static const gchar *arm_gdb_arch_name(CPUState *cs)
+ {
+     ARMCPU *cpu = ARM_CPU(cs);
+@@ -2521,6 +2525,8 @@ static const char *arm_gdb_get_core_xml_file(CPUState *cs)
+     return "arm-core.xml";
+ }
+ 
++#endif
++
+ #ifdef CONFIG_USER_ONLY
+ /**
+  * aarch64_untagged_addr:
+@@ -2552,10 +2558,14 @@ static const struct SysemuCPUOps arm_sysemu_ops = {
+     .has_work = arm_cpu_has_work,
+     .translate_for_debug = arm_cpu_translate_for_debug,
+     .asidx_from_attrs = arm_asidx_from_attrs,
++#ifndef CONFIG_ZEPHYR
+     .write_elf32_note = arm_cpu_write_elf32_note,
+     .write_elf64_note = arm_cpu_write_elf64_note,
++#endif
+     .internal_is_big_endian = arm_cpu_internal_is_big_endian,
++#ifndef CONFIG_ZEPHYR
+     .legacy_vmsd = &vmstate_arm_cpu,
++#endif
+ };
+ #endif
+ 
+@@ -2635,15 +2645,19 @@ static void arm_cpu_class_init(ObjectClass *oc, const void *data)
+     cc->dump_state = arm_cpu_dump_state;
+     cc->set_pc = arm_cpu_set_pc;
+     cc->get_pc = arm_cpu_get_pc;
++#ifndef CONFIG_ZEPHYR
+     cc->gdb_read_register = arm_cpu_gdb_read_register;
+     cc->gdb_write_register = arm_cpu_gdb_write_register;
++#endif
+ #ifndef CONFIG_USER_ONLY
+     cc->max_as = ARMASIdx_MAX;
+     cc->sysemu_ops = &arm_sysemu_ops;
+ #endif
++#ifndef CONFIG_ZEPHYR
+     cc->gdb_arch_name = arm_gdb_arch_name;
+     cc->gdb_get_core_xml_file = arm_gdb_get_core_xml_file;
+     cc->gdb_stop_before_watchpoint = true;
++#endif
+     cc->disas_set_info = arm_disas_set_info;
+ 
+ #ifdef CONFIG_TCG
+@@ -2657,6 +2671,7 @@ static void arm_cpu_instance_init(Object *obj)
+ 
+     acc->info->initfn(obj);
+     arm_cpu_post_init(obj);
++    accel_cpu_instance_init(CPU(obj));
+ }
+ 
+ static void cpu_register_class_init(ObjectClass *oc, const void *data)
+diff --git a/util/cutils.c b/util/cutils.c
+index 96c80d4d42..88c32e7967 100644
+--- a/util/cutils.c
++++ b/util/cutils.c
+@@ -1032,7 +1032,9 @@ static const char *exec_dir;
+ 
+ void qemu_init_exec_dir(const char *argv0)
+ {
+-#ifdef G_OS_WIN32
++#ifdef CONFIG_ZEPHYR
++    exec_dir = CONFIG_BINDIR;
++#elif defined(G_OS_WIN32)
+     char *p;
+     char buf[MAX_PATH];
+     DWORD len;
+@@ -1133,6 +1135,9 @@ void qemu_init_exec_dir(const char *argv0)
+ 
+ char *get_relocated_path(const char *dir)
+ {
++#ifdef CONFIG_ZEPHYR
++    return g_strdup(dir);
++#else
+     size_t prefix_len = strlen(CONFIG_PREFIX);
+     const char *bindir = CONFIG_BINDIR;
+     GString *result;
+@@ -1198,4 +1203,5 @@ char *get_relocated_path(const char *dir)
+     g_string_assign(result, dir);
+ out:
+     return g_string_free(result, false);
++#endif
+ }
+diff --git a/util/datadir.c b/util/datadir.c
+index f96f8fc264..0eca1931fc 100644
+--- a/util/datadir.c
++++ b/util/datadir.c
+@@ -30,6 +30,20 @@
+ static const char *data_dir[16];
+ static int data_dir_idx;
+ 
++static bool readable_file(const char *name)
++{
++#ifdef CONFIG_ZEPHYR
++    int fd = open(name, O_RDONLY);
++
++    if (fd < 0) {
++        return false;
++    }
++    return close(fd) == 0;
++#else
++    return access(name, R_OK) == 0;
++#endif
++}
++
+ char *qemu_find_file(QemuFileType type, const char *name)
+ {
+     int i;
+@@ -37,7 +51,7 @@ char *qemu_find_file(QemuFileType type, const char *name)
+     char *buf;
+ 
+     /* Try the name as a straight path first */
+-    if (access(name, R_OK) == 0) {
++    if (readable_file(name)) {
+         trace_load_file(name, name);
+         return g_strdup(name);
+     }
+@@ -58,7 +72,7 @@ char *qemu_find_file(QemuFileType type, const char *name)
+ 
+     for (i = 0; i < data_dir_idx; i++) {
+         buf = g_strdup_printf("%s/%s%s", data_dir[i], subdir, name);
+-        if (access(buf, R_OK) == 0) {
++        if (readable_file(buf)) {
+             trace_load_file(name, buf);
+             return buf;
+         }
+diff --git a/util/error-report.c b/util/error-report.c
+index 8932beebfb..56cf5c3d09 100644
+--- a/util/error-report.c
++++ b/util/error-report.c
+@@ -210,11 +210,13 @@ static void print_loc(MonitorHMP *hmp)
+     }
+ }
+ 
++#ifndef CONFIG_ZEPHYR
+ char *real_time_iso8601(void)
+ {
+     g_autoptr(GDateTime) dt = g_date_time_new_now_utc();
+     return g_date_time_format_iso8601(dt);
+ }
++#endif
+ 
+ /*
+  * Print a message to current HMP monitor if we have one, else to
+@@ -228,17 +230,18 @@ G_GNUC_PRINTF(2, 0)
+ static void vreport(report_type type, const char *fmt, va_list ap)
+ {
+     MonitorHMP *hmp = monitor_cur_hmp();
+-    gchar *timestr;
+ 
+     if (!hmp) {
+         qemu_flockfile(stderr);
+     }
+ 
++#ifndef CONFIG_ZEPHYR
+     if (message_with_timestamp && !hmp) {
+-        timestr = real_time_iso8601();
++        gchar *timestr = real_time_iso8601();
+         fprintf(stderr, "%s ", timestr);
+         g_free(timestr);
+     }
++#endif
+ 
+     /* Only prepend guest name if -msg guest-name and -name guest=... are set */
+     if (error_with_guestname && error_guest_name && !hmp) {
+diff --git a/util/guest-random.c b/util/guest-random.c
+index 33607d5ff2..a060f8f928 100644
+--- a/util/guest-random.c
++++ b/util/guest-random.c
+@@ -17,9 +17,10 @@
+ #include "exec/replay-core.h"
+ 
+ 
+-static __thread GRand *thread_rand;
+ static bool deterministic;
+ 
++#ifndef CONFIG_ZEPHYR
++static __thread GRand *thread_rand;
+ 
+ static int glib_random_bytes(void *buf, size_t len)
+ {
+@@ -42,6 +43,12 @@ static int glib_random_bytes(void *buf, size_t len)
+     }
+     return 0;
+ }
++#else
++static int glib_random_bytes(void *buf, size_t len)
++{
++    g_assert_not_reached();
++}
++#endif
+ 
+ int qemu_guest_getrandom(void *buf, size_t len, Error **errp)
+ {
+@@ -79,16 +86,24 @@ uint64_t qemu_guest_random_seed_thread_part1(void)
+ 
+ void qemu_guest_random_seed_thread_part2(uint64_t seed)
+ {
++#ifndef CONFIG_ZEPHYR
+     g_assert(thread_rand == NULL);
+     if (deterministic) {
+         thread_rand =
+             g_rand_new_with_seed_array((const guint32 *)&seed,
+                                        sizeof(seed) / sizeof(guint32));
+     }
++#else
++    assert(!deterministic);
++#endif
+ }
+ 
+ int qemu_guest_random_seed_main(const char *seedstr, Error **errp)
+ {
++#ifdef CONFIG_ZEPHYR
++    error_setg(errp, "Zephyr accelerator does not provide deterministic PRNG mode");
++    return -ENOTSUP;
++#else
+     uint64_t seed;
+     if (parse_uint_full(seedstr, 0, &seed)) {
+         error_setg(errp, "Invalid seed number: %s", seedstr);
+@@ -98,4 +113,5 @@ int qemu_guest_random_seed_main(const char *seedstr, Error **errp)
+         qemu_guest_random_seed_thread_part2(seed);
+         return 0;
+     }
++#endif
+ }
+diff --git a/util/memalign.c b/util/memalign.c
+index c199ae7073..25f694eebc 100644
+--- a/util/memalign.c
++++ b/util/memalign.c
+@@ -48,7 +48,13 @@ void *qemu_try_memalign(size_t alignment, size_t size)
+     if (size == 0) {
+         size++;
+     }
+-#if defined(CONFIG_POSIX_MEMALIGN)
++#if defined(CONFIG_ZEPHYR)
++    if (size > SIZE_MAX - (alignment - 1)) {
++        errno = ENOMEM;
++        return NULL;
++    }
++    ptr = aligned_alloc(alignment, QEMU_ALIGN_UP(size, alignment));
++#elif defined(CONFIG_POSIX_MEMALIGN)
+     int ret;
+     ret = posix_memalign(&ptr, alignment, size);
+     if (ret != 0) {

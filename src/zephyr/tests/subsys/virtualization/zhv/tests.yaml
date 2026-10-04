@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+tests:
+  subsys.virtualization.zhv:
+    tags:
+      - arm64
+      - virtualization
+    platform_allow:
+      - qemu_cortex_a53
+    integration_platforms:
+      - qemu_cortex_a53
+    timeout: 120

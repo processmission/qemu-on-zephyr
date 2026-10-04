@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+.section .rodata.qemu_guest_payload, "a", %progbits
+.balign 16
+.global qemu_guest_image_start
+.global qemu_guest_image_end
+qemu_guest_image_start:
+.incbin "@qemu_kernel@"
+qemu_guest_image_end:
+.balign 16
+.global qemu_guest_initrd_start
+.global qemu_guest_initrd_end
+qemu_guest_initrd_start:
+.incbin "@qemu_initrd@"
+qemu_guest_initrd_end:

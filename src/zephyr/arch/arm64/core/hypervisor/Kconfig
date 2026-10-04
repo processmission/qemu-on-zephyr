@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig ARM64_HYPERVISOR
+	bool "Native AArch64 guest executor"
+	depends on ARM64_EL2 && ARM_MMU && GIC_V3 && FPU_SHARING
+	help
+	  Execute one AArch64 guest with Stage-2 isolation. Devices and
+	  instruction exits are handled by an external device model.
+
+if ARM64_HYPERVISOR
+
+config ARM64_HYPERVISOR_RAM_SIZE_MIB
+	int "Reserved guest RAM size in MiB"
+	default 256
+	range 2 512
+	help
+	  Statically reserve a contiguous area aligned to 2 MiB. The size must
+	  be even and the board must provide enough RAM for both host and guest.
+
+endif # ARM64_HYPERVISOR

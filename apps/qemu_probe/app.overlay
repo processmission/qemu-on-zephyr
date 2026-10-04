@@ -1,0 +1,3 @@
+&{/psci} {
+    method = "smc";
+};

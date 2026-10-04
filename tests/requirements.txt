@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Python dependencies for the architecture tests used by this module.
+-r ../upstream/zephyr/scripts/requirements-base.txt
+anytree
+colorama
+junitparser>=3.0.0
+natsort
+ply>=3.10
+pytest>=9.0.3
+python-dotenv>=1.2.2
+tabulate

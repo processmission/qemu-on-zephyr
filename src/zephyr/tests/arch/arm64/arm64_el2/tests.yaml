@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+common:
+  tags:
+    - arm64
+
+tests:
+  arch.arm64.el2:
+    platform_allow:
+      - qemu_cortex_a53
+    integration_platforms:
+      - qemu_cortex_a53
+  arch.arm64.el1:
+    extra_args:
+      - DTC_OVERLAY_FILE=el1.overlay
+    extra_configs:
+      - CONFIG_ARM64_EL2=n
+      - CONFIG_FPU=y
+      - CONFIG_FPU_SHARING=y
+    platform_allow:
+      - qemu_cortex_a53
+    integration_platforms:
+      - qemu_cortex_a53
