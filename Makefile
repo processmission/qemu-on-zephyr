@@ -3,7 +3,9 @@
 BOOTSTRAP_PYTHON ?= python3
 PYTHON ?= $(CURDIR)/.venv/bin/python
 JOBS ?= 8
-export JOBS
+ACCEL ?= zephyr
+CPU ?= cortex-a53
+export JOBS ACCEL CPU
 
 .PHONY: help host-deps setup doctor init update prepare assets build run check probe native-probe test-glib test-payload test-arch test-tools clean check-env
 help:
@@ -11,7 +13,7 @@ help:
 	@echo 'make setup         Prepare .venv, west workspace, SDK and verified guest assets'
 	@echo 'make doctor        Check host tools, SDK, Python packages and QEMU'
 	@echo 'make update        Synchronize the four pinned upstream repositories with west'
-	@echo 'make build / run   Build / start Linux on QEMU on Zephyr'
+	@echo 'make build / run   Build / start Linux; ACCEL=zephyr|tcg CPU=cortex-a53|cortex-a57|cortex-a72'
 	@echo 'make check         Verify Linux, IRQs, EL0/MMU and host scheduling'
 	@echo 'make probe         QOM/PL011 regression'
 	@echo 'make native-probe  Native accelerator diagnostic'

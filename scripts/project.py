@@ -3,6 +3,7 @@
 """Prepare pristine upstream sources plus local overlays, build and run."""
 
 import argparse
+import configparser
 import fcntl
 import hashlib
 import os
@@ -77,8 +78,11 @@ def initialize():
 def configure_west(env=None):
     env = env or command_env(require_sdk=False)
     base = "build/sources/zephyr" if (SOURCES / "zephyr").exists() else "upstream/zephyr"
-    run(sys.executable, "-m", "west", "config", "--local", "zephyr.base", base, env=env)
-    run(sys.executable, "-m", "west", "config", "--local", "zephyr.base-prefer", "configfile", env=env)
+    config = configparser.ConfigParser()
+    config.read(ROOT / ".west/config")
+    for key, value in (("base", base), ("base-prefer", "configfile")):
+        if config.get("zephyr", key, fallback=None) != value:
+            run(sys.executable, "-m", "west", "config", "--local", "zephyr." + key, value, env=env)
 
 
 def digest(path):
@@ -178,44 +182,73 @@ def assets():
 
 
 def build(profile="linux"):
+    accel = os.environ.get("ACCEL", "zephyr")
+    cpu = os.environ.get("CPU", "cortex-a53")
+    if accel not in ("zephyr", "tcg") or cpu not in ("cortex-a53", "cortex-a57", "cortex-a72"):
+        raise RuntimeError("Use ACCEL=zephyr|tcg and CPU=cortex-a53|cortex-a57|cortex-a72")
+    if profile == "native-probe" and accel != "zephyr":
+        raise RuntimeError("native-probe requires ACCEL=zephyr")
     prepare()
     if profile in ("linux", "native-probe"):
         assets()
     app = {"linux": "apps/qemu_linux", "native-probe": "apps/qemu_linux",
            "probe": "apps/qemu_probe", "payload": "tests/payload/app"}[profile]
+    build_dir = build_directory(profile)
     env = command_env()
     command = [sys.executable, "-m", "west", "build", "-b", "qemu_cortex_a53",
-               "-d", str(BUILD / profile), str(ROOT / app), "--",
+               "-d", str(build_dir), str(ROOT / app), "--",
                f"-DPython3_EXECUTABLE={sys.executable}", f"-DZEPHYR_MODULES={ROOT}",
                f"-DZEPHYR_BASE={SOURCES / 'zephyr'}",
                f"-DZEPHYR_SDK_INSTALL_DIR={env['ZEPHYR_SDK_INSTALL_DIR']}",
                f"-DBUILD_VERSION={PINS['zephyr'][:12]}-qoz"]
-    if profile == "native-probe":
-        command.append("-DEXTRA_CONF_FILE=native-probe.conf")
+    if profile in ("linux", "native-probe"):
+        configs = ["native.conf" if accel == "zephyr" else "tcg.conf"]
+        if profile == "native-probe":
+            configs.append("native-probe.conf")
+        command.append("-DEXTRA_CONF_FILE=" + ";".join(configs))
+        command.append("-DDTC_OVERLAY_FILE=" + ("tcg.overlay" if accel == "tcg" else "app.overlay"))
+        command.append(f'-DCONFIG_QEMU_CPU_MODEL="{cpu}"')
     env["CMAKE_BUILD_PARALLEL_LEVEL"] = os.environ.get("JOBS", "8")
     # Native west owns configure/build decisions. Reconfigure on an SDK or Python
     # change, otherwise keep its incremental build path.
-    cache = BUILD / profile / "CMakeCache.txt"
+    cache = build_dir / "CMakeCache.txt"
     signature = "\n".join((str(sys.executable), env["ZEPHYR_SDK_INSTALL_DIR"], PINS["zephyr"]))
-    stamp = BUILD / profile / ".qoz-config"
+    signature += f"\n{accel}\n{cpu}"
+    stamp = build_dir / ".qoz-config"
     if cache.exists() and stamp.exists() and stamp.read_text() == signature:
         command = command[:command.index("--")]
     run(*command, env=env)
     stamp.write_text(signature)
 
 
+def build_directory(profile="linux"):
+    if profile in ("linux", "native-probe"):
+        accel = os.environ.get("ACCEL", "zephyr")
+        cpu = os.environ.get("CPU", "cortex-a53")
+        if accel != "zephyr" or cpu != "cortex-a53":
+            return BUILD / f"{profile}-{accel}-{cpu}"
+    return BUILD / profile
+
+
 def qemu_command(profile="linux", interactive=False):
     machine = "virt,gic-version=3" if profile == "payload" else (
         "virt,virtualization=on,secure=off,gic-version=3")
+    accel = os.environ.get("ACCEL", "zephyr")
+    if accel == "tcg" and profile in ("linux", "native-probe"):
+        machine = "virt,virtualization=off,secure=off,gic-version=3"
+    host_cpu = os.environ.get("CPU", "cortex-a53") if accel == "zephyr" else "cortex-a53"
+    host_cpu = os.environ.get("HOST_CPU", host_cpu)
+    if host_cpu not in ("cortex-a53", "cortex-a57", "cortex-a72"):
+        raise RuntimeError("HOST_CPU must be cortex-a53, cortex-a57 or cortex-a72")
     command = [qemu_path(),
-               "-machine", machine, "-accel", "tcg", "-cpu", "cortex-a53",
+               "-machine", machine, "-accel", "tcg", "-cpu", host_cpu,
                "-m", "128M" if profile in ("probe", "payload") else "512M", "-smp", "1",
                "-display", "none", "-monitor", "none"]
     if interactive:
         command += ["-chardev", "stdio,id=console,mux=on,signal=off", "-serial", "chardev:console"]
     else:
         command += ["-serial", "stdio"]
-    return command + ["-kernel", str(BUILD / profile / "zephyr/zephyr.elf")]
+    return command + ["-kernel", str(build_directory(profile) / "zephyr/zephyr.elf")]
 
 
 def regression(profile):

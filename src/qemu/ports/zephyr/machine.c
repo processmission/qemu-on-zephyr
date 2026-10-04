@@ -25,6 +25,11 @@
 #define UART_IPA 0x09000000ULL
 #define EXTERNAL_IRQS 256
 
+#ifdef CONFIG_QEMU_TCG
+/* The software MMU uses this buffer without reserving a native VM. */
+static uint8_t tcg_guest_ram[256 * MiB] __attribute__((aligned(2097152)));
+#endif
+
 typedef struct ZephyrVirtState {
     MachineState parent;
     MemoryRegion ram;
@@ -62,7 +67,7 @@ static void create_fdt(ZephyrVirtState *s)
     qemu_fdt_setprop_cell(fdt, "/cpus", "#size-cells", 0);
     qemu_fdt_add_subnode(fdt, "/cpus/cpu@0");
     qemu_fdt_setprop_string(fdt, "/cpus/cpu@0", "device_type", "cpu");
-    qemu_fdt_setprop_string(fdt, "/cpus/cpu@0", "compatible", "arm,cortex-a53");
+    qemu_fdt_setprop_string(fdt, "/cpus/cpu@0", "compatible", ARM_CPU(first_cpu)->dtb_compatible);
     qemu_fdt_setprop_cell(fdt, "/cpus/cpu@0", "reg", 0);
     qemu_fdt_add_subnode(fdt, "/psci");
     qemu_fdt_setprop(fdt, "/psci", "compatible", psci_compat, sizeof(psci_compat));
@@ -103,16 +108,26 @@ static void zephyr_virt_init(MachineState *machine)
     void *ram;
     uint64_t ipa, size;
 
+#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
     if (zephyr_get_guest_ram(machine->accelerator, &ram, &ipa, &size, &error_fatal) != 0) {
         abort();
     }
+#else
+    ram = tcg_guest_ram;
+    ipa = GUEST_RAM_IPA;
+    size = sizeof(tcg_guest_ram);
+#endif
     assert(ipa == GUEST_RAM_IPA && size == machine->ram_size && machine->smp.cpus == 1);
     memory_region_init_ram_ptr(&s->ram, OBJECT(machine), "zephyr.guest-ram", size, ram);
     machine->ram = &s->ram;
     memory_region_add_subregion(get_system_memory(), ipa, &s->ram);
 
-    cpu = ARM_CPU(object_new(ARM_CPU_TYPE_NAME("cortex-a53")));
+    cpu = ARM_CPU(object_new(machine->cpu_type));
     object_property_add_child(OBJECT(machine), "cpu0", OBJECT(cpu));
+    object_property_set_bool(OBJECT(cpu), "has_el2", false, &error_fatal);
+    object_property_set_bool(OBJECT(cpu), "has_el3", false, &error_fatal);
+    object_property_set_bool(OBJECT(cpu), "pmu", false, &error_fatal);
+    cpu->psci_conduit = QEMU_PSCI_CONDUIT_HVC;
     qdev_realize(DEVICE(cpu), NULL, &error_fatal);
 
     gic = qdev_new("arm-gicv3");
@@ -156,7 +171,7 @@ static void zephyr_virt_class_init(ObjectClass *object_class, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(object_class);
 
-    mc->desc = "Zephyr ARM virt profile (one A53, PL011, GICv3)";
+    mc->desc = "Zephyr ARM virt profile (one CPU, PL011, GICv3)";
     mc->init = zephyr_virt_init;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a53");
     mc->default_ram_size = 256 * MiB;

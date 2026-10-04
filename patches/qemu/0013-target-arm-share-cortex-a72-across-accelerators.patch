@@ -1,0 +1,162 @@
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Subject: [PATCH] target/arm: share Cortex-A72 across accelerators
+
+The Cortex-A72 model describes architectural registers without using
+TCG-specific interfaces. Move its definition and registration next to
+Cortex-A53 and Cortex-A57 so native accelerators can realize it too.
+
+Keep the register values unchanged and remove the TCG registration to
+avoid registering the same QOM type twice.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+---
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -819,7 +819,69 @@
+     }
+ }
+ 
++static void aarch64_a72_initfn(Object *obj)
++{
++    ARMCPU *cpu = ARM_CPU(obj);
++    ARMISARegisters *isar = &cpu->isar;
++
++    cpu->dtb_compatible = "arm,cortex-a72";
++    set_feature(&cpu->env, ARM_FEATURE_V8);
++    set_feature(&cpu->env, ARM_FEATURE_NEON);
++    set_feature(&cpu->env, ARM_FEATURE_NEON_TRAPS);
++    set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
++    set_feature(&cpu->env, ARM_FEATURE_BACKCOMPAT_CNTFRQ);
++    set_feature(&cpu->env, ARM_FEATURE_AARCH64);
++    set_feature(&cpu->env, ARM_FEATURE_CBAR_RO);
++    set_feature(&cpu->env, ARM_FEATURE_EL2);
++    set_feature(&cpu->env, ARM_FEATURE_EL3);
++    set_feature(&cpu->env, ARM_FEATURE_PMU);
++    cpu->midr = 0x410fd083;
++    cpu->revidr = 0x00000000;
++    cpu->reset_fpsid = 0x41034080;
++    cpu->isar.mvfr0 = 0x10110222;
++    cpu->isar.mvfr1 = 0x12111111;
++    cpu->isar.mvfr2 = 0x00000043;
++    cpu->ctr = 0x8444c004;
++    cpu->reset_sctlr = 0x00c50838;
++    SET_IDREG(isar, ID_PFR0, 0x00000131);
++    SET_IDREG(isar, ID_PFR1, 0x00011011);
++    SET_IDREG(isar, ID_DFR0, 0x03010066);
++    SET_IDREG(isar, ID_AFR0, 0x00000000);
++    SET_IDREG(isar, ID_MMFR0, 0x10201105);
++    SET_IDREG(isar, ID_MMFR1, 0x40000000);
++    SET_IDREG(isar, ID_MMFR2, 0x01260000);
++    SET_IDREG(isar, ID_MMFR3, 0x02102211);
++    SET_IDREG(isar, ID_ISAR0, 0x02101110);
++    SET_IDREG(isar, ID_ISAR1, 0x13112111);
++    SET_IDREG(isar, ID_ISAR2, 0x21232042);
++    SET_IDREG(isar, ID_ISAR3, 0x01112131);
++    SET_IDREG(isar, ID_ISAR4, 0x00011142);
++    SET_IDREG(isar, ID_ISAR5, 0x00011121);
++    SET_IDREG(isar, ID_AA64PFR0, 0x00002222);
++    SET_IDREG(isar, ID_AA64DFR0, 0x10305106);
++    SET_IDREG(isar, ID_AA64ISAR0, 0x00011120);
++    SET_IDREG(isar, ID_AA64MMFR0, 0x00001124);
++    cpu->isar.dbgdidr = 0x3516d000;
++    cpu->isar.dbgdevid = 0x01110f13;
++    cpu->isar.dbgdevid1 = 0x2;
++    cpu->isar.reset_pmcr_el0 = 0x41023000;
++    SET_IDREG(isar, CLIDR, 0x0a200023);
++    /* 32KB L1 dcache */
++    cpu->ccsidr[0] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 4, 64, 32 * KiB, 7);
++    /* 48KB L1 dcache */
++    cpu->ccsidr[1] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 3, 64, 48 * KiB, 2);
++    /* 1MB L2 cache */
++    cpu->ccsidr[2] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 16, 64, 1 * MiB, 7);
++    set_dczid_bs(cpu, 4); /* 64 bytes */
++    cpu->gic_num_lrs = 4;
++    cpu->gic_vpribits = 5;
++    cpu->gic_vprebits = 5;
++    cpu->gic_pribits = 5;
++    define_cortex_a72_a57_a53_cp_reginfo(cpu);
++}
++
+ static const ARMCPUInfo aarch64_cpus[] = {
++    { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
+     { .name = "cortex-a57",         .initfn = aarch64_a57_initfn },
+     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
+ #if defined(CONFIG_KVM) || defined(CONFIG_HVF) || defined(CONFIG_WHPX)
+--- a/target/arm/tcg/cpu64.c
++++ b/target/arm/tcg/cpu64.c
+@@ -273,67 +273,6 @@
+ 
+     /* From D5.4 AArch64 PMU register summary */
+     cpu->isar.reset_pmcr_el0 = 0x410b3000;
+-}
+-
+-static void aarch64_a72_initfn(Object *obj)
+-{
+-    ARMCPU *cpu = ARM_CPU(obj);
+-    ARMISARegisters *isar = &cpu->isar;
+-
+-    cpu->dtb_compatible = "arm,cortex-a72";
+-    set_feature(&cpu->env, ARM_FEATURE_V8);
+-    set_feature(&cpu->env, ARM_FEATURE_NEON);
+-    set_feature(&cpu->env, ARM_FEATURE_NEON_TRAPS);
+-    set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
+-    set_feature(&cpu->env, ARM_FEATURE_BACKCOMPAT_CNTFRQ);
+-    set_feature(&cpu->env, ARM_FEATURE_AARCH64);
+-    set_feature(&cpu->env, ARM_FEATURE_CBAR_RO);
+-    set_feature(&cpu->env, ARM_FEATURE_EL2);
+-    set_feature(&cpu->env, ARM_FEATURE_EL3);
+-    set_feature(&cpu->env, ARM_FEATURE_PMU);
+-    cpu->midr = 0x410fd083;
+-    cpu->revidr = 0x00000000;
+-    cpu->reset_fpsid = 0x41034080;
+-    cpu->isar.mvfr0 = 0x10110222;
+-    cpu->isar.mvfr1 = 0x12111111;
+-    cpu->isar.mvfr2 = 0x00000043;
+-    cpu->ctr = 0x8444c004;
+-    cpu->reset_sctlr = 0x00c50838;
+-    SET_IDREG(isar, ID_PFR0, 0x00000131);
+-    SET_IDREG(isar, ID_PFR1, 0x00011011);
+-    SET_IDREG(isar, ID_DFR0, 0x03010066);
+-    SET_IDREG(isar, ID_AFR0, 0x00000000);
+-    SET_IDREG(isar, ID_MMFR0, 0x10201105);
+-    SET_IDREG(isar, ID_MMFR1, 0x40000000);
+-    SET_IDREG(isar, ID_MMFR2, 0x01260000);
+-    SET_IDREG(isar, ID_MMFR3, 0x02102211);
+-    SET_IDREG(isar, ID_ISAR0, 0x02101110);
+-    SET_IDREG(isar, ID_ISAR1, 0x13112111);
+-    SET_IDREG(isar, ID_ISAR2, 0x21232042);
+-    SET_IDREG(isar, ID_ISAR3, 0x01112131);
+-    SET_IDREG(isar, ID_ISAR4, 0x00011142);
+-    SET_IDREG(isar, ID_ISAR5, 0x00011121);
+-    SET_IDREG(isar, ID_AA64PFR0, 0x00002222);
+-    SET_IDREG(isar, ID_AA64DFR0, 0x10305106);
+-    SET_IDREG(isar, ID_AA64ISAR0, 0x00011120);
+-    SET_IDREG(isar, ID_AA64MMFR0, 0x00001124);
+-    cpu->isar.dbgdidr = 0x3516d000;
+-    cpu->isar.dbgdevid = 0x01110f13;
+-    cpu->isar.dbgdevid1 = 0x2;
+-    cpu->isar.reset_pmcr_el0 = 0x41023000;
+-    SET_IDREG(isar, CLIDR, 0x0a200023);
+-    /* 32KB L1 dcache */
+-    cpu->ccsidr[0] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 4, 64, 32 * KiB, 7);
+-    /* 48KB L1 dcache */
+-    cpu->ccsidr[1] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 3, 64, 48 * KiB, 2);
+-    /* 1MB L2 cache */
+-    cpu->ccsidr[2] = make_ccsidr(CCSIDR_FORMAT_LEGACY, 16, 64, 1 * MiB, 7);
+-    set_dczid_bs(cpu, 4); /* 64 bytes */
+-    cpu->gic_num_lrs = 4;
+-    cpu->gic_vpribits = 5;
+-    cpu->gic_vprebits = 5;
+-    cpu->gic_pribits = 5;
+-    define_cortex_a72_a57_a53_cp_reginfo(cpu);
+ }
+ 
+ static void aarch64_a76_initfn(Object *obj)
+@@ -1531,7 +1470,6 @@
+ static const ARMCPUInfo aarch64_cpus[] = {
+     { .name = "cortex-a35",         .initfn = aarch64_a35_initfn },
+     { .name = "cortex-a55",         .initfn = aarch64_a55_initfn },
+-    { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
+     { .name = "cortex-a76",         .initfn = aarch64_a76_initfn },
+     /*
+      * The Cortex-A78AE differs slightly from the plain Cortex-A78. We don't

@@ -10,7 +10,8 @@ It registers ``zephyr-accel``, ``zephyr-accel-ops`` and
 ``zephyr-accel-arm-cpu``. Guest instructions execute at EL1/EL0; devices remain
 QEMU QOM/qdev/MemoryRegion objects. No TCG execution or KVM device is used.
 
-The initial machine has one Cortex-A53 vCPU, no guest EL2/EL3 or PMU, and
+The native machine has one Cortex-A53, Cortex-A57 or Cortex-A72 vCPU
+matching the host MIDR, no guest EL2/EL3 or PMU, and
 AArch64-only EL0/EL1. SVE, PAC and later ISA features are absent from that CPU
 model. Debug CPRegs retain QEMU's software state; hardware breakpoint execution
 and an inner GDB server are not implemented by this accelerator. Migration,
@@ -20,7 +21,8 @@ Machine integration
 -------------------
 
 Initialize QEMU on one real POSIX worker, then create a MachineState with
-``smp.cpus = smp.max_cpus = 1`` and its RAM size. Select the accelerator through
+``smp.cpus = smp.max_cpus = 1`` and its RAM size.
+The Cortex-A72 definition is shared with TCG in the common ARM CPU source. Select the accelerator through
 ``accel_find("zephyr")`` and ``accel_init_machine()``. Before CPU realization,
 initialize its AccelOps and AccelCPU interfaces using the normal machine setup.
 The ARM instance hook invokes ``accel_cpu_instance_init()`` after CPU properties

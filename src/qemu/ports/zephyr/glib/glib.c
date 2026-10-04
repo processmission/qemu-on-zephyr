@@ -3258,3 +3258,34 @@ void g_error_free(GError *error)
     g_free(error->message);
     g_free(error);
 }
+
+guint g_int64_hash(gconstpointer value)
+{
+    guint64 bits = *(const guint64 *)value;
+
+    return (guint)(bits ^ (bits >> 32));
+}
+
+gboolean g_int64_equal(gconstpointer first, gconstpointer second)
+{
+    return *(const gint64 *)first == *(const gint64 *)second;
+}
+
+GString *g_string_append_unichar(GString *string, gunichar wc)
+{
+    char encoded[6];
+    unsigned int length;
+    static const unsigned char prefix[] = { 0, 0, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc };
+
+    if (wc < 0x80) {
+        return g_string_append_c(string, wc);
+    }
+    length = wc < 0x800 ? 2 : wc < 0x10000 ? 3 : wc < 0x200000 ? 4 :
+             wc < 0x4000000 ? 5 : 6;
+    for (unsigned int i = length - 1; i > 0; i--) {
+        encoded[i] = (wc & 0x3f) | 0x80;
+        wc >>= 6;
+    }
+    encoded[0] = wc | prefix[length];
+    return g_string_append_len(string, encoded, length);
+}

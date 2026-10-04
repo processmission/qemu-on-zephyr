@@ -10,7 +10,7 @@
 ![Status](https://img.shields.io/badge/status-experimental-f59e0b)
 
 An out-of-tree Zephyr module hosting QEMU's ARM machine and device models,
-with a native EL2 executor running an ARM64 Linux guest.
+running ARM64 Linux through native EL2 virtualization or TCG translation.
 
 [Quick start](#quick-start) · [Architecture](#architecture) · [Development](CONTRIBUTING.md) · [中文](README.zh-CN.md)
 
@@ -18,9 +18,9 @@ with a native EL2 executor running an ARM64 Linux guest.
 
 ---
 
-| **Real QEMU models** | **Native guest execution** | **Repeatable workspace** |
+| **Real QEMU models** | **Two execution backends** | **Repeatable workspace** |
 | :--- | :--- | :--- |
-| ARM CPU, QOM/qdev, MemoryRegion, PL011, software GICv3 and the original Linux loader. | A `zephyr` accelerator connects QEMU to Zephyr's ARM64 EL2 executor. No inner TCG loop or KVM dependency. | Pinned upstream sources, local patches, automatic SDK/Python setup, and a Linux boot acceptance test. |
+| ARM CPU, QOM/qdev, MemoryRegion, PL011, software GICv3 and the original Linux loader. | Choose the native `zephyr` accelerator or upstream TCG with an AArch64 JIT. Neither requires host KVM. | Pinned upstream sources, local patches, automatic SDK/Python setup, and a Linux boot acceptance test. |
 
 ## Quick start
 
@@ -43,6 +43,17 @@ make run
 ```
 
 **No venv activation or manual SDK export is needed for Make.**
+Choose a backend and guest CPU at build time:
+
+```sh
+make run ACCEL=zephyr CPU=cortex-a57   # Native EL2; matching outer CPU
+make run ACCEL=tcg CPU=cortex-a72      # TCG on an EL1 Cortex-A53 host
+make check ACCEL=tcg CPU=cortex-a53    # Automated Linux acceptance
+```
+
+Supported models are `cortex-a53`, `cortex-a57` and `cortex-a72`. The default
+remains `ACCEL=zephyr CPU=cortex-a53`. See [backend profiles](docs/backends.md).
+
 Use **Ctrl-a, then x** to exit outer QEMU. Guest `poweroff -f` leaves the Zephyr
 host running.
 
@@ -109,17 +120,20 @@ flowchart TB
     host["Linux development host · x86_64 / AArch64"]
     host --> outer["Outer QEMU · ARM virt · TCG · 512 MiB"]
     subgraph platform["Emulated ARM platform"]
-        subgraph el2["Zephyr host · EL2"]
+        subgraph el2["Zephyr host · EL2 native / EL1 TCG"]
             app["Application / POSIX worker"]
             models["QEMU module<br/>ARM CPU · QOM/qdev · MemoryRegion<br/>PL011 · software GICv3 · Linux loader"]
             accel["QEMU zephyr accelerator"]
             executor["zhv executor<br/>Stage-2 · context switch · traps"]
             kernel["Zephyr scheduler · timers · UART driver"]
             app --> models --> accel --> executor
+            tcg["TCG accelerator<br/>ARM translator · software MMU · AArch64 JIT"]
+            models --> tcg
             kernel -->|"queued input / kicks"| models
         end
-        guest["Linux guest<br/>kernel at EL1 · userspace at EL0"]
+        guest["Linux guest<br/>virtual EL1 kernel · virtual EL0 userspace"]
         executor <-->|"guest entry / native exits"| guest
+        tcg <-->|"translated execution"| guest
         guest -.->|"MMIO / trapped registers"| models
     end
     outer --> platform
@@ -127,26 +141,28 @@ flowchart TB
 
 **There are two QEMUs.** The outer executable emulates the development hardware
 and loads `zephyr.elf`. The inner QEMU is compiled into that ELF: it creates
-the guest machine and loads Linux. Guest instructions follow the ARM
-virtualization path through `zephyr-accel` and `zhv`, while the outer platform
-itself remains TCG-emulated.
+the guest machine and loads Linux. Native execution uses `zephyr-accel` and
+`zhv`; software execution uses upstream TCG translation and its software MMU.
+The TCG profile boots the Zephyr host at EL1 with outer virtualization disabled.
+The outer platform is TCG-emulated in either profile.
 
 | Layer | Responsibility | Start reading |
 | :--- | :--- | :--- |
 | Application | QEMU worker and independent host heartbeat | [`apps/qemu_linux/`](apps/qemu_linux/) |
 | Machine and adapters | Devices, Linux loading, GLib, files, console, event loop | [`src/qemu/ports/zephyr/`](src/qemu/ports/zephyr/) |
 | Accelerator | vCPU lifecycle, clocks, wait/kick and native execution | [`src/qemu/accel/zephyr/`](src/qemu/accel/zephyr/) |
+| TCG host adapter | Serial execution, wakeups and separate RW/RX code aliases | [`src/qemu/ports/zephyr/tcg.c`](src/qemu/ports/zephyr/tcg.c) |
 | ARM adapter | CPU state, MMIO, system-register and PSCI exits | [`src/qemu/target/arm/zephyr.c`](src/qemu/target/arm/zephyr.c) |
 | EL2 executor | Stage-2, guest entry/exit, TLS/FP state and timer delivery | [`src/zephyr/arch/arm64/core/hypervisor/`](src/zephyr/arch/arm64/core/hypervisor/) |
 
 The module uses **Zephyr's CMake/Ninja build**, not QEMU's Meson build. It
 compiles an explicit subset of upstream QEMU and retains QEMU's QAPI/trace
-generators. QEMU and Stage-2 share the same guest RAM; MMIO goes through the
-original QEMU address-space and device-model code.
+generators. Native QEMU and Stage-2 share guest RAM; TCG uses its software MMU over a
+separate reserved RAM buffer. Both use the original QEMU device models.
 
 > **Module boundary:** QEMU integration is out of tree, but the EL2 host also
-> needs the Zephyr architecture patches included here. Adding this module to an
-> otherwise unmodified upstream Zephyr is not sufficient to run the guest.
+> needs the Zephyr architecture patches included here. Native execution requires the prepared Zephyr tree. TCG does not need
+> EL2, but the managed workspace still applies the common patch series.
 
 More: [implementation map](docs/architecture.md) · [executor API](src/zephyr/include/zephyr/virtualization/zhv.h).
 
@@ -156,7 +172,7 @@ More: [implementation map](docs/architecture.md) · [executor API](src/zephyr/in
 qemu-on-zephyr/
 ├── west/west.yml          # Fixed upstream revisions; no full manifest import
 ├── upstream/             # Clean QEMU, Zephyr, dtc and zlib Git submodules
-├── patches/              # Changes to existing upstream files
+├── patches/              # Atomic patches with explicit series ordering
 ├── src/{qemu,zephyr}/     # New implementation files and architecture tests
 ├── zephyr/               # Module metadata, Kconfig and CMake source list
 ├── apps/                 # Linux guest and standalone PL011 examples
@@ -188,19 +204,20 @@ SDK-hosted QEMU. Run `make help` for the command list.
 
 ## Status and scope
 
-**Working profile:** one VM, one Cortex-A53 vCPU, 256 MiB guest RAM, PL011,
+**Working profile:** one VM, one Cortex-A53/A57/A72 vCPU, 256 MiB guest RAM, PL011,
 software GICv3, Linux 6.4.16 and an initramfs shell.
 
 - Linux console, timer IRQs, EL0/MMU execution and concurrent host scheduling
   are covered by the acceptance test.
-- Component coverage includes 196 filesystem checks, 177 GLib differential
+- Component coverage includes 196 filesystem checks, 184 GLib differential
   output lines and 26 architecture/FPU/executor test cases.
 - SDK-provided QEMU 10.0.2 and system QEMU 10.2.2 have booted the profile.
 
 Physical ARM boards, multiple VMs/vCPUs, block/network backends, migration,
 guest EL2/EL3 and VM restart/hotplug are outside the implemented or validated
 profile. This is an **experimental integration**, not a production isolation
-boundary. See [validation evidence and limits](docs/validation.md).
+boundary. See [validation evidence and limits](docs/validation.md) and the
+[patch series](docs/patches.md).
 
 ## Contributing and licenses
 

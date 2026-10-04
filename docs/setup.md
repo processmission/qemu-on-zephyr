@@ -98,6 +98,7 @@ and Git can inspect repositories initially fetched by west.
 | --- | --- |
 | `ZEPHYR_SDK_INSTALL_DIR=/path make setup` | Select an SDK explicitly; reject wrong versions or missing compilers |
 | `QEMU_SYSTEM_AARCH64=/path make run` | Override SDK QEMU |
+| `ACCEL=tcg CPU=cortex-a72 make run` | Select a software backend and CPU model |
 | `JOBS=16 make build` | Set parallel build jobs |
 | `BOOTSTRAP_PYTHON=python3.12 make setup` | Choose the Python used to create the venv |
 | `make update` | Synchronize sources to the manifest |
@@ -134,3 +135,7 @@ offline from the initialized upstream repositories.
 
 Linux acceptance writes `build/linux-validation.log`; architecture tests write
 `build/twister/`. CI runs the same setup and Make targets on Ubuntu 24.04.
+
+Backend selection and the six supported profiles are described in
+[backends.md](backends.md). Patches are maintained as ordered
+[atomic series](patches.md), not one rollup per upstream repository.

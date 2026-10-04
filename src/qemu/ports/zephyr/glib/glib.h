@@ -301,6 +301,18 @@ typedef gchar  **GStrv;
 #define G_MININT64 ((gint64) (-G_MAXINT64 - 1))
 #define G_MAXUINT64 ((guint64) 0xffffffffffffffffULL)
 
+typedef gboolean (*GTraverseFunc)(gpointer key, gpointer value, gpointer data);
+static inline void g_atomic_int_inc(volatile gint *value)
+{
+    __atomic_add_fetch(value, 1, __ATOMIC_SEQ_CST);
+}
+
+static inline gboolean g_atomic_int_dec_and_test(volatile gint *value)
+{
+    return __atomic_sub_fetch(value, 1, __ATOMIC_SEQ_CST) == 0;
+}
+guint g_int64_hash(gconstpointer value);
+gboolean g_int64_equal(gconstpointer first, gconstpointer second);
 typedef gint  (*GCompareFunc)     (gconstpointer a, gconstpointer b);
 typedef gint  (*GCompareDataFunc) (gconstpointer a, gconstpointer b,
                                    gpointer user_data);

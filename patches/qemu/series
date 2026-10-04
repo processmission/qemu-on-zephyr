@@ -8,3 +8,6 @@
 0008-hw-arm-load-linux-payloads-without-firmware-services.patch
 0009-system-support-preallocated-zephyr-guest-memory.patch
 0010-system-adapt-zephyr-runstate-request-handling.patch
+0011-tcg-map-separate-write-and-execute-aliases-on-zephyr.patch
+0012-target-arm-limit-zephyr-cpus-to-the-gicv3-interface.patch
+0013-target-arm-share-cortex-a72-across-accelerators.patch

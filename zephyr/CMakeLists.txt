@@ -37,7 +37,10 @@ execute_process(
           -o "${qemu_generated}/qapi" -b "${qemu_root}/qapi/qapi-schema.json"
   COMMAND_ERROR_IS_FATAL ANY
 )
-foreach(trace_dir qom qapi hw/core hw/char system util chardev target/arm hw/intc hw/arm hw/mem)
+foreach(trace_dir qom qapi hw/core hw/char system util chardev target/arm hw/intc hw/arm hw/mem accel/tcg target/arm/tcg)
+  if(NOT EXISTS "${qemu_root}/${trace_dir}/trace-events")
+    continue()
+  endif()
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${qemu_root}/${trace_dir}/trace-events")
   string(REPLACE "/" "_" trace_group "${trace_dir}")
@@ -177,13 +180,12 @@ file(GLOB qemu_qapi_sources
 zephyr_library_sources(${qemu_qapi_sources})
 zephyr_library_sources("${qemu_generated}/qapi/qapi-events-qdev.c")
 
-if(CONFIG_QEMU_ZEPHYR_ACCEL)
+if(CONFIG_QEMU_SYSTEM)
   zephyr_library_include_directories("${qemu_root}/target/arm")
   set(qemu_native_common_sources
     accel/accel-common.c
     accel/accel-system.c
     accel/accel-irq.c
-    accel/zephyr/zephyr-accel.c
     hw/core/cpu-common.c
     hw/core/cpu-system.c
     hw/core/machine.c
@@ -205,6 +207,7 @@ if(CONFIG_QEMU_ZEPHYR_ACCEL)
     util/guest-random.c
     util/id.c
     ports/zephyr/bootstrap.c
+    ports/zephyr/accelerator.c
     ports/zephyr/console.c
     ports/zephyr/console-uart.c
     ports/zephyr/file.c
@@ -214,8 +217,6 @@ if(CONFIG_QEMU_ZEPHYR_ACCEL)
     target/arm/cpu.c
     target/arm/cpu64.c
     target/arm/cpu-max.c
-    target/arm/zephyr.c
-    accel/zephyr/probe.c
     target/arm/cpu-irq.c
     target/arm/mmuidx.c
     target/arm/helper.c
@@ -228,8 +229,6 @@ if(CONFIG_QEMU_ZEPHYR_ACCEL)
     target/arm/arm-powerctl.c
     target/arm/ptw.c
     target/arm/kvm-stub.c
-    target/arm/tcg-stubs.c
-    target/arm/gicv5-stubs.c
     hw/intc/arm_gicv3.c
     hw/intc/arm_gicv3_common.c
     hw/intc/arm_gicv3_cpuif.c
@@ -244,7 +243,22 @@ if(CONFIG_QEMU_ZEPHYR_ACCEL)
   foreach(source_file IN LISTS qemu_native_common_sources qemu_native_arm_sources)
     zephyr_library_sources("${qemu_root}/${source_file}")
   endforeach()
-  zephyr_library_sources("${qemu_root}/accel/zephyr/probe.S")
+  if(CONFIG_QEMU_ZEPHYR_ACCEL)
+    zephyr_library_sources(
+      "${qemu_root}/accel/zephyr/zephyr-accel.c"
+      "${qemu_root}/accel/zephyr/probe.c"
+      "${qemu_root}/accel/zephyr/probe.S"
+      "${qemu_root}/target/arm/zephyr.c"
+      "${qemu_root}/target/arm/tcg-stubs.c"
+      "${qemu_root}/target/arm/gicv5-stubs.c"
+    )
+    set_source_files_properties(
+      "${qemu_root}/target/arm/zephyr.c" "${qemu_root}/accel/zephyr/probe.c"
+      PROPERTIES COMPILE_DEFINITIONS "COMPILING_PER_TARGET;CONFIG_TARGET=\"config-target.h\"")
+  endif()
+  if(CONFIG_QEMU_TCG)
+    include("${CMAKE_CURRENT_LIST_DIR}/tcg.cmake")
+  endif()
   zephyr_library_sources("${qemu_generated}/qapi/qapi-events-run-state.c")
   set(qemu_kernel "${qoz_root}/downloads/tuxrun-arm64-Image")
   set(qemu_initrd "${qoz_root}/downloads/generic-arm64-rootfs.cpio.gz")

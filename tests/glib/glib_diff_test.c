@@ -1065,6 +1065,39 @@ static void test_overflow_mode(void)
     printf("overflow returned %p\n", p);
 }
 
+static void test_tcg_utilities(void)
+{
+    gint references = 1;
+    const gint64 values[] = {0, -1, INT64_MIN, INT64_MAX, INT64_C(0x123456789)};
+    const gunichar characters[] = {0, 0x41, 0x7ff, 0x800, 0x2588, 0x1f600, 0x10ffff};
+    GString *string = g_string_new(NULL);
+    gboolean first_zero;
+
+    g_atomic_int_inc(&references);
+    printf("tcg atomic refs=%d ", references);
+    first_zero = g_atomic_int_dec_and_test(&references);
+    printf("first-zero=%d ", first_zero);
+    printf("last-zero=%d\n", g_atomic_int_dec_and_test(&references));
+    for (guint i = 0; i < G_N_ELEMENTS(values); i++) {
+        gint64 copy = values[i];
+
+        /* GLib versions may change the hash algorithm, not key semantics. */
+        printf("tcg hash64[%u] stable=%d same=%d next=%d\n", i,
+               g_int64_hash(&values[i]) == g_int64_hash(&copy),
+               g_int64_equal(&values[i], &copy),
+               g_int64_equal(&values[i], &values[(i + 1) % G_N_ELEMENTS(values)]));
+    }
+    for (guint i = 0; i < G_N_ELEMENTS(characters); i++) {
+        g_string_append_unichar(string, characters[i]);
+    }
+    printf("tcg unicode length=%zu bytes=", (size_t)string->len);
+    for (gsize i = 0; i < string->len; i++) {
+        printf("%02x", (unsigned char)string->str[i]);
+    }
+    printf("\n");
+    g_string_free(string, TRUE);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--overflow") == 0) {
@@ -1091,5 +1124,6 @@ int main(int argc, char **argv)
     test_file_error_mapping();
     test_random_range();
     test_prgname();
+    test_tcg_utilities();
     return 0;
 }

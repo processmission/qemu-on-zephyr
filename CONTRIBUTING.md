@@ -11,12 +11,14 @@ Keep changes to the upstream repositories separate from new module code.
   and unexpected revisions rather than silently ignoring them.
 
 `make build` regenerates the prepared sources automatically when necessary.
-Source patches apply in filename order, followed by the source overlays. Keep
+Source patches apply in each project's `series` order, then source overlays. Keep
 an upstream file in a patch and a new file in an overlay, not both.
 
 To develop an upstream patch, use a temporary checkout of the pinned commit,
-apply the existing patches there, edit the upstream files, and export `git diff
---binary HEAD` into the patch file. Copy new files into `src/<project>/`. Do not
+apply the existing patches there, make one focused commit per change, and
+export each commit with `git format-patch`. Update `patches/<project>/series`
+and include a DCO sign-off with commit message lines at most 72 characters.
+Copy new files into `src/<project>/`. Do not
 change the submodule's recorded commit to a private patched commit.
 
 To upgrade upstream, select an upstream commit in its submodule, update the
@@ -62,3 +64,7 @@ make test-arch
 Include relevant test results with changes. Preserve original copyright and
 SPDX notices. Use signed-off commits under the Developer Certificate of Origin
 and do not include build outputs, guest binaries, credentials or session logs.
+
+Run Linux acceptance for both backends and each supported CPU after changing
+CPU or execution code. See [backend profiles](docs/backends.md) and
+[patch maintenance](docs/patches.md).

@@ -12,4 +12,8 @@
 #define TARGET_NAME "aarch64"
 #define TARGET_NEED_FDT 1
 
+#ifdef CONFIG_QEMU_TCG
+#define CONFIG_TCG 1
+#endif
+
 #endif

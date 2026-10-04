@@ -14,7 +14,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from environment import qemu_path
+from project import build_directory, qemu_command
 
 
 def main():
@@ -22,22 +22,21 @@ def main():
     parser.add_argument("--no-build", action="store_true")
     args = parser.parse_args()
     workspace = Path(__file__).resolve().parents[2]
-    build = workspace / "build/linux"
+    build = build_directory()
+    accel = os.environ.get("ACCEL", "zephyr")
+    cpu = os.environ.get("CPU", "cortex-a53")
     if not args.no_build:
         subprocess.run(
             [sys.executable, str(workspace / "scripts/project.py"), "build"],
             cwd=workspace, check=True,
         )
 
-    logfile = workspace / "build/linux-validation.log"
-    command = [
-        qemu_path(),
-        "-machine", "virt,virtualization=on,secure=off,gic-version=3",
-        "-accel", "tcg",
-        "-cpu", "cortex-a53", "-m", "512M", "-smp", "1",
-        "-display", "none", "-monitor", "none",
+    logfile = workspace / "build" / f"{build.name}-validation.log"
+    command = qemu_command()
+    serial = command.index("-serial")
+    command[serial:serial + 2] = [
         "-chardev", f"stdio,id=hostconsole,signal=off,logfile={logfile}",
-        "-serial", "chardev:hostconsole", "-kernel", str(build / "zephyr/zephyr.elf"),
+        "-serial", "chardev:hostconsole",
     ]
     pid, terminal = pty.fork()
     if pid == 0:
@@ -77,9 +76,13 @@ def main():
         return count
 
     try:
-        expect(r"QEMU Linux host EL2")
-        expect(r"cpu=cortex-a53-arm-cpu accel=zephyr-accel \(Zephyr\)")
-        expect(r"Run /bin/sh as init process")
+        expect(r"QEMU Linux host EL" + ("1" if accel == "tcg" else "2"))
+        if accel == "tcg":
+            aliases, _ = expect(r"QEMU_TCG_JIT RW=(0x[0-9a-f]+) RX=(0x[0-9a-f]+)")
+            if aliases.group(1) == aliases.group(2):
+                raise RuntimeError("TCG must use distinct write and execute aliases")
+        expect(r"cpu=" + re.escape(cpu) + r"-arm-cpu accel=" + accel + r"-accel ")
+        expect(r"Run /bin/sh as init process", timeout=180 if accel == "tcg" else 45)
         expect(r"~ # ")
         send("uname -m")
         expect(r"^aarch64$")
@@ -112,12 +115,14 @@ def main():
         el0 = max(map(int, re.findall(r"EL0=(\d+)", transcript)), default=0)
         mmu = max(map(int, re.findall(r"MMU-on=(\d+)", transcript)), default=0)
         if el0 == 0 or mmu == 0:
-            raise RuntimeError("Native execution statistics did not prove EL0 and guest MMU use")
+            raise RuntimeError("Execution statistics did not prove EL0 and guest MMU use")
+        if accel == "tcg" and not re.search(r"TCG-runs=[1-9]\d*", transcript):
+            raise RuntimeError("TCG execution was not observed")
 
         send("poweroff -f")
         expect(r"reboot: Power down")
         expect(r"ZEPHYR_HOST_HEARTBEAT=\d+", timeout=10)
-        print(f"PASS: real Zephyr accelerator; ARM64 Linux shell; timer IRQ {before}->{after}; "
+        print(f"PASS: {accel}/{cpu}; ARM64 Linux shell; timer IRQ {before}->{after}; "
               f"host heartbeat during busy guest; EL0={el0}, MMU-on={mmu}; host survives poweroff")
         print(f"Console: {logfile}")
     finally:

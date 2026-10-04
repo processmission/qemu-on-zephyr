@@ -1,0 +1,24 @@
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Subject: [PATCH] target/arm: limit Zephyr CPUs to the GICv3 interface
+
+Allow TCG initialization of CPU models without GCIE in the fixed
+Zephyr machine. Assert that a GICv5-capable CPU is not selected when
+only the GICv3 controller is built.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+---
+--- a/target/arm/gicv5-stubs.c
++++ b/target/arm/gicv5-stubs.c
+@@ -9,7 +9,12 @@
+ 
+ void define_gicv5_cpuif_regs(ARMCPU *cpu)
+ {
++#ifdef CONFIG_ZEPHYR
++    /* The fixed machine has a software GICv3 and no GICv5 controller. */
++    assert(!cpu_isar_feature(aa64_gcie, cpu));
++#else
+     g_assert_not_reached();
++#endif
+ }
+ 
+ void gicv5_update_ppi_state(CPUARMState *env, int ppi, bool level)

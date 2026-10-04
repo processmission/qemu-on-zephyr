@@ -25,6 +25,7 @@
 #include "system/runstate.h"
 #include "system/zephyr.h"
 #include "payload-fs.h"
+#include "accelerator.h"
 
 extern const uint8_t qemu_guest_image_start[], qemu_guest_image_end[];
 extern const uint8_t qemu_guest_initrd_start[], qemu_guest_initrd_end[];
@@ -39,8 +40,15 @@ int qemu_zephyr_linux_main(void)
     int exit_status = 0;
 #ifdef CONFIG_QEMU_HOST_HEARTBEAT
     int64_t next_stats = 5 * NANOSECONDS_PER_SECOND;
-    unsigned int stats_reports = 0;
 #endif
+
+    if (strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a53") != 0 &&
+        strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a57") != 0 &&
+        strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a72") != 0) {
+        error_report("unsupported CPU model: %s (use cortex-a53/a57/a72)",
+                     CONFIG_QEMU_CPU_MODEL);
+        return -EINVAL;
+    }
 
     module_call_init(MODULE_INIT_TARGET_INFO);
     target_info_qom_set_target();
@@ -65,7 +73,7 @@ int qemu_zephyr_linux_main(void)
     object_property_add_new_container(OBJECT(machine), "peripheral-anon");
     object_property_add_child(machine_get_container("unattached"), "sysbus",
                                OBJECT(sysbus_get_default()));
-    machine->cpu_type = g_strdup(machine_default_cpu_type(machine));
+    machine->cpu_type = g_strdup_printf("%s-arm-cpu", CONFIG_QEMU_CPU_MODEL);
 #ifndef CONFIG_QEMU_NATIVE_PROBE_ONLY
     machine->kernel_filename = g_strdup("/guest/Image");
     machine->initrd_filename = g_strdup("/guest/initramfs.cpio.gz");
@@ -78,9 +86,18 @@ int qemu_zephyr_linux_main(void)
     }
     machine_memory_init();
     phase_advance(PHASE_MACHINE_CREATED);
+#ifdef CONFIG_QEMU_TCG
+    accel_class = accel_find("tcg");
+#else
     accel_class = accel_find("zephyr");
+#endif
     assert(accel_class != NULL);
     accel = ACCEL(object_new_with_class(OBJECT_CLASS(accel_class)));
+#ifdef CONFIG_QEMU_TCG
+    object_property_set_str(OBJECT(accel), "thread", "single", &error_fatal);
+    object_property_set_int(OBJECT(accel), "tb-size", CONFIG_QEMU_TCG_CACHE_SIZE_MIB,
+                            &error_fatal);
+#endif
     result = accel_init_machine(accel, machine);
     if (result != 0) {
         return result;
@@ -90,17 +107,21 @@ int qemu_zephyr_linux_main(void)
     machine_run_board_init(machine, NULL, &error_fatal);
     qdev_machine_creation_done();
     vm_start();
+#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
     if (zephyr_accel_probe(first_cpu, &error_fatal) != 0) {
         return -EIO;
     }
+#endif
 #ifdef CONFIG_QEMU_NATIVE_PROBE_ONLY
     printf("QEMU_NATIVE_PROBE_OK\n");
     return 0;
 #endif
     qemu_system_reset(SHUTDOWN_CAUSE_GUEST_RESET);
-    printf("Starting ARM64 Linux using QEMU arm_load_kernel and zephyr accelerator\n");
+    printf("Starting ARM64 Linux using QEMU arm_load_kernel and %s accelerator\n",
+           current_accel_name());
     while (runstate_is_running()) {
         if (qemu_zephyr_process_requests(&exit_status)) {
+            qemu_zephyr_cpu_stop();
             return exit_status;
         }
         qemu_process_cpu_events_common(first_cpu);
@@ -108,29 +129,31 @@ int qemu_zephyr_linux_main(void)
         qemu_clock_run_all_timers();
         qemu_zephyr_quiesce();
 #ifdef CONFIG_QEMU_HOST_HEARTBEAT
-        if (stats_reports < 3 && zephyr_clock_get_ns() >= next_stats) {
+        if (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) >= next_stats) {
             GString *stats = g_string_new(NULL);
 
             cpus_get_accel()->get_vcpu_stats(first_cpu, stats);
             printf("QEMU_ACCEL_STATS %s\n", stats->str);
             g_string_free(stats, true);
-            stats_reports++;
             next_stats += 5 * NANOSECONDS_PER_SECOND;
         }
 #endif
-        result = zephyr_cpu_exec(first_cpu);
+        result = qemu_zephyr_cpu_exec(first_cpu);
         if (result < 0) {
+            qemu_zephyr_cpu_stop();
             return result;
         }
         if (result == EXCP_HLT) {
             qemu_zephyr_console_poll();
             qemu_clock_run_all_timers();
-            result = zephyr_cpu_wait(first_cpu,
+            result = qemu_zephyr_cpu_wait(first_cpu,
                       timerlistgroup_deadline_ns(&main_loop_tlg));
             if (result < 0) {
+                qemu_zephyr_cpu_stop();
                 return result;
             }
         }
     }
+    qemu_zephyr_cpu_stop();
     return 0;
 }

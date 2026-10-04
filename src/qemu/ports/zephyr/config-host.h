@@ -25,8 +25,14 @@
 #define CONFIG_BINDIR "/qemu"
 #define CONFIG_QEMU_FIRMWAREPATH
 
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
 #define CONFIG_FDT 1
+#endif
+
+#ifdef CONFIG_QEMU_TCG
+#define CONFIG_TCG 1
+/* Select QEMU's own balanced tree implementation for this GLib subset. */
+#define HAVE_GLIB_WITH_SLICE_ALLOCATOR 1
 #endif
 
 #endif

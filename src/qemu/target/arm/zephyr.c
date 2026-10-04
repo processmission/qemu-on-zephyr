@@ -391,13 +391,20 @@ static bool zephyr_arm_cpu_realize(CPUState *cs, Error **errp)
 {
     ARMCPU *cpu = ARM_CPU(cs);
     const char *type = object_get_typename(OBJECT(cpu));
+    uint64_t host_midr;
+    bool supported = strcmp(type, ARM_CPU_TYPE_NAME("cortex-a53")) == 0 ||
+                     strcmp(type, ARM_CPU_TYPE_NAME("cortex-a57")) == 0 ||
+                     strcmp(type, ARM_CPU_TYPE_NAME("cortex-a72")) == 0;
 
-    if (strcmp(type, ARM_CPU_TYPE_NAME("cortex-a53")) != 0 ||
+    __asm__ volatile("mrs %0, midr_el1" : "=r"(host_midr));
+    /* Match implementer, architecture and part; revisions may differ. */
+    if (!supported || (host_midr & 0xff0ffff0) != (cpu->midr & 0xff0ffff0) ||
         cpu->has_el2 || cpu->has_el3 || cpu->has_pmu || cpu->cfgend ||
         cpu->gt_cntfrq_hz != zephyr_counter_frequency() ||
         cpu->psci_conduit != QEMU_PSCI_CONDUIT_HVC) {
-        error_setg(errp, "zephyr requires Cortex-A53/EL1, no EL2/EL3/PMU,"
-                   " little-endian, native CNTFRQ and PSCI over HVC");
+        error_setg(errp, "zephyr requires a Cortex-A53/A57/A72 matching the host"
+                   " MIDR (0x%" PRIx64 "), EL1 without EL2/EL3/PMU, little-endian,"
+                   " native CNTFRQ and PSCI over HVC", host_midr);
         return false;
     }
     return true;

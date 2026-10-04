@@ -1,0 +1,39 @@
+From: Chao Liu <chao.liu.zevorn@gmail.com>
+Subject: [PATCH] tcg: map separate write and execute aliases on Zephyr
+
+Use a fixed code buffer with a read-only executable alias. Keep writable
+host data non-executable and retain TCG's split-WX address translation.
+
+Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>
+---
+--- a/tcg/region.c
++++ b/tcg/region.c
+@@ -34,6 +34,9 @@
+ #include "exec/translation-block.h"
+ #include "tcg-internal.h"
+ #include "host/cpuinfo.h"
++#ifdef CONFIG_ZEPHYR
++#include "ports/zephyr/accelerator.h"
++#endif
+ 
+ 
+ /*
+@@ -504,7 +507,17 @@
+   (DEFAULT_CODE_GEN_BUFFER_SIZE_1 < MAX_CODE_GEN_BUFFER_SIZE \
+    ? DEFAULT_CODE_GEN_BUFFER_SIZE_1 : MAX_CODE_GEN_BUFFER_SIZE)
+ 
+-#ifdef USE_STATIC_CODE_GEN_BUFFER
++#ifdef CONFIG_ZEPHYR
++static int alloc_code_gen_buffer(size_t size, int splitwx, Error **errp)
++{
++    void *rx;
++
++    region.start_aligned = qemu_zephyr_code_buffer(size, &rx);
++    region.total_size = size;
++    tcg_splitwx_diff = (uintptr_t)rx - (uintptr_t)region.start_aligned;
++    return PROT_READ | PROT_WRITE;
++}
++#elif defined(USE_STATIC_CODE_GEN_BUFFER)
+ static uint8_t static_code_gen_buffer[DEFAULT_CODE_GEN_BUFFER_SIZE]
+     __attribute__((aligned(CODE_GEN_ALIGN)));
+ 

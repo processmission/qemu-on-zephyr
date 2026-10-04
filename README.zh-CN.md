@@ -10,7 +10,7 @@
 ![Status](https://img.shields.io/badge/status-experimental-f59e0b)
 
 把 QEMU 的 ARM machine、设备模型与 Linux loader 移植进 Zephyr，
-通过新增的 `zephyr` accelerator 和原生 EL2 执行器运行 ARM64 Linux。
+通过 `zephyr` 原生 EL2 accelerator 或 TCG 软件翻译运行 ARM64 Linux。
 
 [快速开始](#快速开始) · [架构](#架构) · [开发指南](CONTRIBUTING.md) · [English](README.md)
 
@@ -62,6 +62,18 @@ make run
 
 </details>
 
+可在构建时选择后端和 CPU 型号：
+
+```sh
+make run ACCEL=zephyr CPU=cortex-a57   # 原生 EL2，宿主 CPU 与 guest 匹配
+make run ACCEL=tcg CPU=cortex-a72      # 在 EL1/A53 宿主上翻译执行 A72
+make check ACCEL=tcg CPU=cortex-a53    # 自动验收
+```
+
+两种后端都支持 `cortex-a53`、`cortex-a57`、`cortex-a72`，默认仍是
+`ACCEL=zephyr CPU=cortex-a53`。这里的 CPU 选择是型号选择，当前仍为单 vCPU；
+详见 [后端与 CPU 配置](docs/backends.md)。
+
 已有 SDK 可显式指定：
 
 ```sh
@@ -77,26 +89,29 @@ make doctor
 ```mermaid
 flowchart TB
     host["Linux 开发机"] --> outer["外层 QEMU · ARM virt · TCG"]
-    outer --> zephyr["Zephyr 宿主 · EL2"]
+    outer --> zephyr["Zephyr 宿主 · 原生 EL2 / TCG EL1"]
     zephyr --> models["QEMU module<br/>ARM CPU · QOM/qdev · 内存与设备模型"]
     models --> accel["zephyr accelerator"]
+    models --> tcg["TCG · 软件 MMU · AArch64 JIT"]
     accel --> executor["zhv 执行器<br/>Stage-2 · 上下文切换 · 陷入处理"]
-    executor <-->|"进入 guest / 退出"| guest["Linux 内核 EL1 · 用户态 EL0"]
+    executor <-->|"进入 guest / 退出"| guest["Linux 虚拟 EL1 内核 · 虚拟 EL0 用户态"]
+    tcg <-->|"翻译执行"| guest
     guest -.->|"MMIO / 系统寄存器访问"| models
     zephyr --> scheduler["宿主调度器 · 定时器 · UART"]
 ```
 
 这里有**两层 QEMU**。外层是开发机上的模拟器，加载 `zephyr.elf`；内层 QEMU
 已编进这个 ELF，负责创建 guest machine、加载 Linux 和模拟设备。Linux 指令
-经 `zephyr` accelerator 进入 ARM 虚拟化执行路径，内层没有 TCG 执行循环；
-整个 ARM 平台仍由外层 TCG 模拟。
+可经 `zephyr` accelerator 进入 ARM 虚拟化执行路径，也可经内层 TCG 翻译执行。
+TCG 配置使用 EL1 宿主并关闭外层虚拟化扩展；两种配置的外层仍使用 TCG。
 
 QEMU 所需源码由 **Zephyr CMake/Ninja** 编译，未使用 QEMU 的 Meson 构建流程。
 移植层维护明确的源码列表，同时复用 QEMU 的 QAPI/trace 生成器。QEMU 的
-MemoryRegion 与执行器的 Stage-2 映射共享同一块 guest RAM。
+MemoryRegion 在原生模式下与 Stage-2 共享 guest RAM，在 TCG 模式下由软件 MMU
+访问独立保留的 RAM；设备实现共用。
 
 > 根仓库是 Zephyr 的树外 module，但 EL2 能力仍依赖本仓库提供的 Zephyr 内核
-> 补丁。只把 module 加到完全未修改的上游 Zephyr，还不能运行这个 Linux guest。
+> 补丁。TCG 无需 EL2，当前统一构建流程仍使用本仓库准备的 Zephyr 源码树。
 
 ## 代码组织
 
@@ -106,7 +121,7 @@ MemoryRegion 与执行器的 Stage-2 映射共享同一块 guest RAM。
 | `upstream/` | 干净的 Git submodule，由 west 同步 |
 | `src/qemu/` | accelerator、ARM 适配、GLib、串口、文件系统等新增代码 |
 | `src/zephyr/` | EL2 执行器、公共接口和底层测试 |
-| `patches/` | 对上游已有文件的修改 |
+| `patches/` | 按功能拆分的补丁，由 `series` 明确应用顺序 |
 | `zephyr/` | module 元数据、Kconfig、CMake |
 | `apps/`、`tests/` | 示例应用与回归测试 |
 | `build/sources/` | 自动生成的源码树，不作为编辑入口 |
@@ -133,16 +148,16 @@ MemoryRegion 与执行器的 Stage-2 映射共享同一块 guest RAM。
 
 ## 当前能力与验证
 
-已支持 **单 VM、单 Cortex-A53 vCPU、256 MiB guest RAM、PL011、软件 GICv3、
+已支持 **单 VM、单 Cortex-A53/A57/A72 vCPU、256 MiB guest RAM、PL011、软件 GICv3、
 Linux 6.4.16 initramfs shell**。
 
 - 自动验收检查串口交互、定时器 IRQ 增长、EL0/MMU 执行，以及 guest 忙循环期间
   的宿主调度和 guest 关机后的宿主存活。
-- 回归覆盖 196 项文件系统断言、177 行 GLib 差分输出、26 项架构/FPU/执行器测试。
+- 回归覆盖 196 项文件系统断言、184 行 GLib 差分输出、26 项架构/FPU/执行器测试。
 - SDK 自带 QEMU 10.0.2 和系统 QEMU 10.2.2 均已运行过该配置。
 
 物理板、多 VM、多核、块设备/网络后端、迁移、guest EL2/EL3、VM 重启与热插拔
 尚不在已实现或已验证范围。这是实验性集成，尚不构成生产级隔离保证。
 
-[架构细节](docs/architecture.md) · [验证记录](docs/validation.md) ·
+[补丁序列](docs/patches.md) · [架构细节](docs/architecture.md) · [验证记录](docs/validation.md) ·
 [镜像来源](docs/guest-assets.md) · [许可证与来源说明](LICENSE.md)

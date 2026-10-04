@@ -12,10 +12,10 @@
 #include "qapi/qapi-commands-control.h"
 #include "migration/vmstate.h"
 #include "chardev/char.h"
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
 #include "system/cpus.h"
 #include "exec/cpu-common.h"
-#include "system/zephyr.h"
+#include "accelerator.h"
 #include "qemu/mmap-alloc.h"
 #include "qemu/memalign.h"
 #include "qemu/madvise.h"
@@ -34,7 +34,7 @@
 
 /* Only this thread may enter QOM/device/memory code, including RCU readers. */
 static k_tid_t qemu_owner;
-#ifndef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifndef CONFIG_QEMU_SYSTEM
 static QemuMutex qemu_bql;
 static bool qemu_bql_held;
 #endif
@@ -47,12 +47,13 @@ QemuEvent rcu_gp_event;
 QEMU_DEFINE_CO_TLS(struct rcu_reader_data, rcu_reader)
 
 QemuMutexLockFunc qemu_mutex_lock_func = qemu_mutex_lock_impl;
+QemuMutexTrylockFunc qemu_mutex_trylock_func = qemu_mutex_trylock_impl;
 QemuMutexLockFunc bql_mutex_lock_func = qemu_mutex_lock_impl;
 QemuCondWaitFunc qemu_cond_wait_func = qemu_cond_wait_impl;
 QemuCondTimedWaitFunc qemu_cond_timedwait_func = qemu_cond_timedwait_impl;
 unsigned qemu_loglevel = LOG_GUEST_ERROR | LOG_UNIMP;
 
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
 bool qtest_driver(void)
 {
     return false;
@@ -199,7 +200,7 @@ void qemu_mutex_lock_impl(QemuMutex *mutex, const char *file, int line)
 {
     assert(mutex->initialized);
     check_pthread(pthread_mutex_lock(&mutex->lock));
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     if (mutex_is_bql(mutex)) {
         assert(k_current_get() == qemu_owner);
         bql_update_status(true);
@@ -210,12 +211,28 @@ void qemu_mutex_lock_impl(QemuMutex *mutex, const char *file, int line)
 void qemu_mutex_unlock_impl(QemuMutex *mutex, const char *file, int line)
 {
     assert(mutex->initialized);
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     if (mutex_is_bql(mutex)) {
         bql_update_status(false);
     }
 #endif
     check_pthread(pthread_mutex_unlock(&mutex->lock));
+}
+
+int qemu_mutex_trylock_impl(QemuMutex *mutex, const char *file, int line)
+{
+    int result = pthread_mutex_trylock(&mutex->lock);
+
+    if (result == 0) {
+#ifdef CONFIG_QEMU_SYSTEM
+        if (mutex_is_bql(mutex)) {
+            bql_update_status(true);
+        }
+#endif
+    } else if (result != EBUSY) {
+        check_pthread(result);
+    }
+    return result;
 }
 
 void qemu_cond_init(QemuCond *cond)
@@ -247,7 +264,7 @@ void qemu_cond_wait_impl(QemuCond *cond, QemuMutex *mutex,
                          const char *file, int line)
 {
     assert(cond->initialized && mutex->initialized);
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     bool is_bql = mutex_is_bql(mutex);
 
     if (is_bql) {
@@ -255,7 +272,7 @@ void qemu_cond_wait_impl(QemuCond *cond, QemuMutex *mutex,
     }
 #endif
     check_pthread(pthread_cond_wait(&cond->cond, &mutex->lock));
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     if (is_bql) {
         bql_update_status(true);
     }
@@ -278,7 +295,7 @@ bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
         deadline.tv_sec++;
         deadline.tv_nsec -= 1000000000;
     }
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     bool is_bql = mutex_is_bql(mutex);
 
     if (is_bql) {
@@ -286,7 +303,7 @@ bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
     }
 #endif
     result = pthread_cond_timedwait(&cond->cond, &mutex->lock, &deadline);
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     if (is_bql) {
         bql_update_status(true);
     }
@@ -328,7 +345,7 @@ void rcu_unregister_thread(void)
     qemu_zephyr_quiesce();
 }
 
-#ifndef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifndef CONFIG_QEMU_SYSTEM
 bool bql_locked(void)
 {
     return qemu_bql_held && k_current_get() == qemu_owner;
@@ -355,7 +372,7 @@ void qemu_zephyr_os_init(void)
     assert(qemu_owner == NULL);
     qemu_owner = k_current_get();
     rcu_register_thread();
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     qemu_init_cpu_list();
     qemu_init_cpu_loop();
 #else
@@ -371,16 +388,18 @@ void qemu_zephyr_os_init(void)
 void qemu_notify_event(void)
 {
     k_sem_give(&qemu_event);
-#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifdef CONFIG_QEMU_SYSTEM
     if (first_cpu != NULL) {
-        zephyr_cpu_kick(first_cpu);
+        qemu_zephyr_cpu_kick(first_cpu);
     }
 #endif
 }
 
 void call_rcu1(struct rcu_head *head, RCUCBFunc *func)
 {
-    assert(bql_locked());
+    /* TCG grows its translation hash with BQL released. All readers and
+     * producers still run on this owner; reclaim only at quiesce below. */
+    assert(k_current_get() == qemu_owner);
     head->func = func;
     head->next = NULL;
     *rcu_pending_tail = head;
@@ -402,7 +421,7 @@ void qemu_zephyr_quiesce(void)
     }
 }
 
-#ifndef CONFIG_QEMU_ZEPHYR_ACCEL
+#ifndef CONFIG_QEMU_SYSTEM
 int64_t cpu_get_clock(void)
 {
     return k_cyc_to_ns_floor64(k_cycle_get_64());

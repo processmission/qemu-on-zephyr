@@ -62,3 +62,37 @@ The latter ran all five configurations and 26 architecture test cases.
 Logs for the managed workflow are in `build/west-check.log`,
 `build/west-arch.log`, `build/managed-interactive.log`, `build/tools-final.log`
 and `build/ubuntu-sdk-validation.log`.
+
+## Native and TCG CPU profiles
+
+The two backends were validated with Zephyr SDK 1.0.1 and its QEMU 10.0.2.
+Native tests use an outer CPU matching the guest model and an EL2 host. TCG
+tests use an outer Cortex-A53 with virtualization disabled and an EL1 host.
+Every row passed Linux shell interaction, timer IRQ growth, EL0/MMU samples,
+host progress during a busy guest, and host survival after guest poweroff.
+
+| Backend | Guest CPU | Timer IRQ before/after | EL0 samples | MMU-on samples |
+| --- | --- | --- | --- | --- |
+| zephyr | Cortex-A53 | 200 -> 223 | 1397 | 26994 |
+| zephyr | Cortex-A57 | 288 -> 324 | 1106 | 26770 |
+| zephyr | Cortex-A72 | 197 -> 222 | 1513 | 27588 |
+| tcg | Cortex-A53 | 1723 -> 1773 | 198 | 12597 |
+| tcg | Cortex-A57 | 1434 -> 1478 | 339 | 13175 |
+| tcg | Cortex-A72 | 1524 -> 1565 | 327 | 12877 |
+
+TCG additionally reported distinct writable and executable JIT mappings and
+nonzero execution return counts. Native Cortex-A72 on an outer Cortex-A53 was
+rejected by the MIDR compatibility check before Linux execution.
+
+After integration, all 26 architecture/FPU/executor cases and 196 filesystem
+checks passed. The standalone PL011 regression passed, the expanded GLib
+differential fixture matched 184 lines, and 16 environment/patch/profile tests
+passed. The original 10 QEMU and 6 Zephyr baseline patches were verified to
+produce the same upstream file trees as the previous rollups; three new QEMU
+patches add the TCG mapping, GICv3-only profile and shared Cortex-A72 model.
+
+Profile consoles are retained as `build/linux*-validation.log`. Other evidence
+is in `build/native-model-mismatch.log`, `build/final-arch.log`,
+`build/final-glib.log`, `build/final-tools.log`, `build/final-probe.log` and
+`build/final-payload.log`. These are local tests; the CI workflow separately
+runs the six backend/CPU combinations.

@@ -41,7 +41,7 @@ int main(void)
 
     __asm__ volatile("mrs %0, CurrentEL" : "=r"(current_el));
     printk("QEMU Linux host EL%llu\n", current_el >> 2);
-    if (current_el != 8U) {
+    if (current_el != (IS_ENABLED(CONFIG_QEMU_TCG) ? 4U : 8U)) {
         return -1;
     }
     status = pthread_attr_init(&attr);

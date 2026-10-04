@@ -12,12 +12,37 @@ menuconfig QEMU
 
 if QEMU
 
+config QEMU_SYSTEM
+	bool
+	default y if QEMU_ZEPHYR_ACCEL || QEMU_TCG
+
 config QEMU_ZEPHYR_ACCEL
 	bool "Native ARM64 virtualization accelerator"
 	depends on ARM64_HYPERVISOR && !SMP
 	help
 	  Run a single ARM64 virtual CPU with the Zephyr EL2 executor and
 	  QEMU's ARM CPU, interrupt controller and Linux boot models.
+
+config QEMU_TCG
+	bool "TCG software translation accelerator"
+	depends on !QEMU_ZEPHYR_ACCEL && !SMP && ARM_MMU
+	help
+	  Run an AArch64 guest through QEMU's TCG translator and software
+	  MMU. The Zephyr host does not need hardware virtualization.
+
+config QEMU_CPU_MODEL
+	string "Guest ARM64 CPU model"
+	default "cortex-a53"
+	depends on QEMU_SYSTEM
+	help
+	  QEMU CPU model selected before machine realization. The native
+	  accelerator requires a supported model matching the host CPU.
+
+config QEMU_TCG_CACHE_SIZE_MIB
+	int "TCG code cache size in MiB"
+	default 16
+	range 2 64
+	depends on QEMU_TCG
 
 config QEMU_NATIVE_PROBE_ONLY
 	bool "Stop after the native CPU and PL011 integration probe"
@@ -28,7 +53,7 @@ config QEMU_NATIVE_PROBE_ONLY
 
 config QEMU_HOST_HEARTBEAT
 	bool "Print an independent host-thread scheduling diagnostic"
-	depends on QEMU_ZEPHYR_ACCEL
+	depends on QEMU_SYSTEM
 	help
 	  The Linux test application starts a higher-priority Zephyr thread
 	  which reports its progress while the virtual CPU is running.

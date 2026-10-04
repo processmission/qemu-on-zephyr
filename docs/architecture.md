@@ -7,15 +7,16 @@ thread supplies scheduling evidence through periodic heartbeat messages.
 ## QEMU model and event loop
 
 `src/qemu/ports/zephyr/bootstrap.c` initializes the normal QEMU subsystems,
-selects the `zephyr` accelerator, creates the machine, resets ROM state and
+selects the configured `zephyr` or `tcg` accelerator, creates the machine and
 starts the VM. The owner thread processes runstate requests, console input,
-QEMU timers, deferred RCU callbacks and native vCPU exits.
+QEMU timers, deferred RCU callbacks and backend execution returns.
 
-`machine.c` defines `zephyr-virt-machine` with a Cortex-A53, borrowed 256 MiB
-RAM, the original PL011 and software GICv3 models. It generates the guest DTB
+`machine.c` defines `zephyr-virt-machine` with a selected Cortex-A53/A57/A72,
+256 MiB guest RAM, the original PL011 and software GICv3 models. It generates the guest DTB
 and calls upstream `arm_load_kernel()`. The guest Image and initramfs are
 embedded in the host ELF, exposed through `/guest` by `payload-fs.c`, and read
-by the QEMU file adapter. QEMU and Stage-2 refer to the same guest RAM buffer.
+by the QEMU file adapter. Native execution borrows the executor RAM; TCG
+uses a separate buffer accessed through its software MMU.
 
 `os.c` implements the supported host synchronization and allocation facilities.
 The GLib subset supplies the data structures and APIs needed by the selected
@@ -43,6 +44,20 @@ executes natively. CNTV/CNTVCT run natively; CNTP/CNTPCT are trapped and modeled
 Software GICv3 state drives the next entry's virtual IRQ/FIQ levels. A physical
 guest-timer interrupt causes a host exit, not a direct guest device interrupt.
 
+## TCG execution
+
+`zephyr/tcg.cmake` builds upstream TCG and ARM translation sources and generates
+instruction decoders with QEMU's decodetree script. The accelerator class is
+upstream `tcg-accel`; `ports/zephyr/tcg.c` supplies the single-owner AccelOps,
+periodic exit requests, wait/kick handling and split RW/RX code buffer mapping.
+The guest runs through QEMU's software TLB and original device dispatch.
+
+The default TCG host runs at EL1 with outer virtualization disabled. A-profile
+CPU models are independent of the outer Cortex-A53. The native adapter instead
+checks that the selected model matches the physical MIDR and configures
+Stage-2 for the physical address range reported by the host. See
+[backend profiles](backends.md) for configuration and limits.
+
 ## Build boundary
 
 `patches/zephyr/` extends existing ARM64 startup, MMU, exception, FPU and timer
@@ -50,7 +65,7 @@ code for the EL2 host. `patches/qemu/` adapts existing loader, CPU, memory,
 runstate and host utility paths. New files live in the two `src/` overlays.
 
 `scripts/project.py prepare` exports the exact pinned upstream commits, applies
-the patches and overlays, and installs the pinned dtc/zlib sources into the
+the explicitly ordered patch series and overlays, and installs the pinned dtc/zlib sources into the
 generated QEMU tree. It does not mutate upstream submodules. `zephyr/CMakeLists.txt`
 builds the selected QEMU sources directly through Zephyr CMake and regenerates
 QAPI/trace files from those sources. It does not reuse a host QEMU build or run

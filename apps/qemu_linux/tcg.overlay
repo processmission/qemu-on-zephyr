@@ -1,0 +1,8 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+&{/psci} {
+    method = "hvc";
+};
+
+&sram0 {
+    reg = <0x0 0x40000000 0x0 DT_SIZE_M(512)>;
+};
