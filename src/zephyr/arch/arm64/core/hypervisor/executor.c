@@ -140,8 +140,10 @@ static struct zhv_timer_sample timer_sample(void)
 
 int zhv_vm_create(const struct zhv_vm_config *config, struct zhv_vm **vm, struct zhv_ram *ram)
 {
+	static const uint8_t pa_bits[] = {32, 36, 40, 42, 44, 48};
 	uint64_t pa;
 	uint64_t parange;
+	uint64_t pa_limit;
 	int ret = take_lock();
 
 	if (ret != 0) {
@@ -163,15 +165,15 @@ int zhv_vm_create(const struct zhv_vm_config *config, struct zhv_vm **vm, struct
 		goto out;
 	}
 	parange = read_id_aa64mmfr0_el1() & 15U;
-	if (GET_EL(read_currentel()) != MODE_EL2 || parange > 2U ||
+	if (GET_EL(read_currentel()) != MODE_EL2 || parange >= ARRAY_SIZE(pa_bits) ||
 	    (read_cntv_ctl_el0() & 1U) != 0U) {
 		ret = -ENOTSUP;
 		goto out;
 	}
 	pa = k_mem_phys_addr(guest_ram);
-	if ((pa % BLOCK_SIZE) != 0U ||
-	    pa + config->ram_size > (1ULL << (parange == 2U ? 40U :
-					    parange == 1U ? 36U : 32U))) {
+	pa_limit = BIT64(pa_bits[parange]);
+	if ((pa % BLOCK_SIZE) != 0U || pa >= pa_limit ||
+	    config->ram_size > pa_limit - pa) {
 		ret = -ENOTSUP;
 		goto out;
 	}
