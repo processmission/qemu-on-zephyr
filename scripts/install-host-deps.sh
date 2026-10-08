@@ -17,7 +17,7 @@ case "$(uname -s)" in
             exit 1
         fi
         HOMEBREW_NO_INSTALL_UPGRADE=1 brew install \
-            git make python wget xz pkgconf glib dtc gperf libmagic
+            git make python wget xz pkgconf glib dtc gperf libmagic e2fsprogs
         ;;
     Linux)
         if [[ ! -r /etc/os-release ]]; then
@@ -35,17 +35,17 @@ case "$(uname -s)" in
                 "${elevate[@]}" apt-get update
                 "${elevate[@]}" apt-get install -y --no-install-recommends \
                     git make python3 python3-venv python3-dev build-essential \
-                    wget xz-utils file patch tar ca-certificates pkg-config libglib2.0-dev
+                    wget xz-utils file patch tar ca-certificates pkg-config libglib2.0-dev e2fsprogs
                 ;;
             arch)
                 "${elevate[@]}" pacman -S --needed --noconfirm \
                     git make python python-pip base-devel wget xz file patch tar \
-                    ca-certificates pkgconf glib2
+                    ca-certificates pkgconf glib2 e2fsprogs
                 ;;
             fedora)
                 "${elevate[@]}" dnf install -y \
                     git make python3 python3-pip python3-devel gcc gcc-c++ \
-                    wget xz file patch tar which ca-certificates pkgconf-pkg-config glib2-devel
+                    wget xz file patch tar which ca-certificates pkgconf-pkg-config glib2-devel e2fsprogs
                 ;;
             *)
                 echo "Unsupported package manager for ${ID:-unknown}. See docs/setup.md for required host tools." >&2

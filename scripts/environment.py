@@ -7,6 +7,7 @@ import platform
 import shutil
 import subprocess
 import sys
+from guest_disk import mke2fs_path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
@@ -107,6 +108,10 @@ def host_problems() -> list[str]:
     for command in commands:
         if not shutil.which(command):
             problems.append(f"missing host command: {command}")
+    try:
+        mke2fs_path()
+    except RuntimeError as error:
+        problems.append(str(error))
     return problems
 
 
