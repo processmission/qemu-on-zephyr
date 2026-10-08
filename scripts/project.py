@@ -15,6 +15,7 @@ import urllib.request
 import yaml
 
 from environment import command_env, qemu_path
+from qemu_config import QemuConfig, load_config
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
@@ -183,19 +184,16 @@ def assets():
             temporary.unlink(missing_ok=True)
 
 
-def build(profile="linux"):
-    accel = os.environ.get("ACCEL", "zephyr")
-    cpu = os.environ.get("CPU", "cortex-a53")
-    if accel not in ("zephyr", "tcg") or cpu not in ("cortex-a53", "cortex-a57", "cortex-a72"):
-        raise RuntimeError("Use ACCEL=zephyr|tcg and CPU=cortex-a53|cortex-a57|cortex-a72")
-    if profile == "native-probe" and accel != "zephyr":
-        raise RuntimeError("native-probe requires ACCEL=zephyr")
+def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
+    config = config or load_config()
+    config.validate_profile(profile)
+    accel, cpu = config.accel, config.cpu
     prepare()
     if profile in ("linux", "native-probe"):
         assets()
     app = {"linux": "apps/qemu_linux", "native-probe": "apps/qemu_linux",
            "probe": "apps/qemu_probe", "payload": "tests/payload/app"}[profile]
-    build_dir = build_directory(profile)
+    build_dir = build_directory(profile, config=config)
     env = command_env()
     command = [sys.executable, "-m", "west", "build", "-b", "qemu_cortex_a53",
                "-d", str(build_dir), str(ROOT / app), "--",
@@ -210,12 +208,13 @@ def build(profile="linux"):
         command.append("-DEXTRA_CONF_FILE=" + ";".join(configs))
         command.append("-DDTC_OVERLAY_FILE=" + ("tcg.overlay" if accel == "tcg" else "app.overlay"))
         command.append(f'-DCONFIG_QEMU_CPU_MODEL="{cpu}"')
+        command.append(f'-DCONFIG_QEMU_MACHINE_MODEL="{config.machine}"')
     env["CMAKE_BUILD_PARALLEL_LEVEL"] = os.environ.get("JOBS", "8")
     # Native west owns configure/build decisions. Reconfigure on an SDK or Python
     # change, otherwise keep its incremental build path.
     cache = build_dir / "CMakeCache.txt"
     signature = "\n".join((str(sys.executable), env["ZEPHYR_SDK_INSTALL_DIR"], PINS["zephyr"]))
-    signature += f"\n{accel}\n{cpu}"
+    signature += f"\n{config.machine}\n{accel}\n{cpu}"
     stamp = build_dir / ".qoz-config"
     if cache.exists() and stamp.exists() and stamp.read_text() == signature:
         command = command[:command.index("--")]
@@ -223,22 +222,26 @@ def build(profile="linux"):
     stamp.write_text(signature)
 
 
-def build_directory(profile="linux"):
+def build_directory(profile: str = "linux", *, config: QemuConfig | None = None) -> Path:
+    config = config or load_config()
+    config.validate_profile(profile)
     if profile in ("linux", "native-probe"):
-        accel = os.environ.get("ACCEL", "zephyr")
-        cpu = os.environ.get("CPU", "cortex-a53")
+        accel, cpu = config.accel, config.cpu
         if accel != "zephyr" or cpu != "cortex-a53":
             return BUILD / f"{profile}-{accel}-{cpu}"
     return BUILD / profile
 
 
-def qemu_command(profile="linux", interactive=False):
+def qemu_command(profile: str = "linux", interactive: bool = False,
+                 *, config: QemuConfig | None = None) -> list[str]:
+    config = config or load_config()
+    config.validate_profile(profile)
     machine = "virt,gic-version=3" if profile == "payload" else (
         "virt,virtualization=on,secure=off,gic-version=3")
-    accel = os.environ.get("ACCEL", "zephyr")
+    accel = config.accel
     if accel == "tcg" and profile in ("linux", "native-probe"):
         machine = "virt,virtualization=off,secure=off,gic-version=3"
-    host_cpu = os.environ.get("CPU", "cortex-a53") if accel == "zephyr" else "cortex-a53"
+    host_cpu = config.cpu if accel == "zephyr" else "cortex-a53"
     host_cpu = os.environ.get("HOST_CPU", host_cpu)
     if host_cpu not in ("cortex-a53", "cortex-a57", "cortex-a72"):
         raise RuntimeError("HOST_CPU must be cortex-a53, cortex-a57 or cortex-a72")
@@ -250,7 +253,7 @@ def qemu_command(profile="linux", interactive=False):
         command += ["-chardev", "stdio,id=console,mux=on,signal=off", "-serial", "chardev:console"]
     else:
         command += ["-serial", "stdio"]
-    return command + ["-kernel", str(build_directory(profile) / "zephyr/zephyr.elf")]
+    return command + ["-kernel", str(build_directory(profile, config=config) / "zephyr/zephyr.elf")]
 
 
 def regression(profile):

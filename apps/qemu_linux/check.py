@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Boot the actual port and verify Linux console, IRQs and host scheduling."""
 
 import argparse
 import os
@@ -15,16 +13,17 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from project import build_directory, qemu_command
+from qemu_config import load_config
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Verify Linux console, IRQs and host scheduling.")
     parser.add_argument("--no-build", action="store_true")
     args = parser.parse_args()
     workspace = Path(__file__).resolve().parents[2]
-    build = build_directory()
-    accel = os.environ.get("ACCEL", "zephyr")
-    cpu = os.environ.get("CPU", "cortex-a53")
+    config = load_config()
+    build = build_directory(config=config)
+    accel, cpu = config.accel, config.cpu
     if not args.no_build:
         subprocess.run(
             [sys.executable, str(workspace / "scripts/project.py"), "build"],
@@ -32,7 +31,7 @@ def main():
         )
 
     logfile = workspace / "build" / f"{build.name}-validation.log"
-    command = qemu_command()
+    command = qemu_command(config=config)
     serial = command.index("-serial")
     command[serial:serial + 2] = [
         "-chardev", f"stdio,id=hostconsole,signal=off,logfile={logfile}",
@@ -81,7 +80,8 @@ def main():
             aliases, _ = expect(r"QEMU_TCG_JIT RW=(0x[0-9a-f]+) RX=(0x[0-9a-f]+)")
             if aliases.group(1) == aliases.group(2):
                 raise RuntimeError("TCG must use distinct write and execute aliases")
-        expect(r"cpu=" + re.escape(cpu) + r"-arm-cpu accel=" + accel + r"-accel ")
+        expect(r"QEMU machine=" + re.escape(config.machine) + r"-machine cpu=" +
+               re.escape(cpu) + r"-arm-cpu accel=" + accel + r"-accel ")
         expect(r"Run /bin/sh as init process", timeout=180 if accel == "tcg" else 45)
         expect(r"~ # ")
         send("uname -m")

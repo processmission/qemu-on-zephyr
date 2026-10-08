@@ -111,7 +111,9 @@ and Git can inspect repositories initially fetched by west.
 | --- | --- |
 | `ZEPHYR_SDK_INSTALL_DIR=/path make setup` | Select an SDK explicitly; reject wrong versions or missing compilers |
 | `QEMU_SYSTEM_AARCH64=/path make run` | Override SDK QEMU |
-| `ACCEL=tcg CPU=cortex-a72 make run` | Select a software backend and CPU model |
+| `make run QEMU_ARGS='-M zephyr-virt -accel tcg -cpu cortex-a72'` | Select the inner machine, accelerator and CPU model |
+| `make run QEMU_ARGS='-M help'` | List supported inner machines; `-accel help` and `-cpu help` list the other selections |
+| `ACCEL=tcg CPU=cortex-a72 make run` | Provide defaults for options omitted from `QEMU_ARGS` |
 | `JOBS=16 make build` | Set parallel build jobs |
 | `BOOTSTRAP_PYTHON=python3.12 make setup` | Choose the Python used to create the venv |
 | `make update` | Synchronize sources to the manifest |

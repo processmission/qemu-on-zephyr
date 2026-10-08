@@ -64,17 +64,19 @@ make run
 
 </details>
 
-可在构建时选择后端和 CPU 型号：
+通过 `QEMU_ARGS` 指定 Zephyr 内部 QEMU 的机器、后端和 CPU 型号：
 
 ```sh
-make run ACCEL=zephyr CPU=cortex-a57   # 原生 EL2，宿主 CPU 与 guest 匹配
-make run ACCEL=tcg CPU=cortex-a72      # 在 EL1/A53 宿主上翻译执行 A72
-make check ACCEL=tcg CPU=cortex-a53    # 自动验收
+make run QEMU_ARGS='-M zephyr-virt -accel zephyr -cpu cortex-a57'
+make run QEMU_ARGS='-M zephyr-virt,accel=tcg -cpu cortex-a72'
+make check QEMU_ARGS='-accel tcg -cpu cortex-a53'
 ```
 
-两种后端都支持 `cortex-a53`、`cortex-a57`、`cortex-a72`，默认仍是
-`ACCEL=zephyr CPU=cortex-a53`。这里的 CPU 选择是型号选择，当前仍为单 vCPU；
-详见 [后端与 CPU 配置](docs/backends.md)。
+两种后端都支持 `cortex-a53`、`cortex-a57`、`cortex-a72`。默认机器是
+`zephyr-virt`，使用 `zephyr` 后端和 Cortex-A53，提供一个 vCPU 和 256 MiB 内存。
+参数会写入 Zephyr 构建配置，外层 QEMU 固定使用 `virt` 板卡。
+`ACCEL`、`CPU` 为 `QEMU_ARGS` 中省略的选项提供默认值。
+使用 `make run QEMU_ARGS='-help'` 查看选项，详见[机器、后端与 CPU 配置](docs/backends.md)。
 
 已有 SDK 可显式指定：
 

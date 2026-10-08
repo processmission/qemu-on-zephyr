@@ -30,6 +30,14 @@ config QEMU_TCG
 	  Run an AArch64 guest through QEMU's TCG translator and software
 	  MMU. The Zephyr host does not need hardware virtualization.
 
+config QEMU_MACHINE_MODEL
+	string "Guest QEMU machine model"
+	default "zephyr-virt"
+	depends on QEMU_SYSTEM
+	help
+	  QEMU machine selected before realization. The supported machine is
+	  zephyr-virt, with one ARM64 CPU, PL011 and a software GICv3.
+
 config QEMU_CPU_MODEL
 	string "Guest ARM64 CPU model"
 	default "cortex-a53"

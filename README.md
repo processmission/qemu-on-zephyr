@@ -45,16 +45,18 @@ make run
 ```
 
 **No venv activation or manual SDK export is needed for Make.**
-Choose a backend and guest CPU at build time:
+Select the inner QEMU machine, accelerator and guest CPU:
 
 ```sh
-make run ACCEL=zephyr CPU=cortex-a57   # Native EL2; matching outer CPU
-make run ACCEL=tcg CPU=cortex-a72      # TCG on an EL1 Cortex-A53 host
-make check ACCEL=tcg CPU=cortex-a53    # Automated Linux acceptance
+make run QEMU_ARGS='-M zephyr-virt -accel zephyr -cpu cortex-a57'
+make run QEMU_ARGS='-M zephyr-virt,accel=tcg -cpu cortex-a72'
+make check QEMU_ARGS='-accel tcg -cpu cortex-a53'
 ```
 
-Supported models are `cortex-a53`, `cortex-a57` and `cortex-a72`. The default
-remains `ACCEL=zephyr CPU=cortex-a53`. See [backend profiles](docs/backends.md).
+Supported CPU models are `cortex-a53`, `cortex-a57` and `cortex-a72`. The default
+is `zephyr-virt` with `zephyr` and Cortex-A53. `ACCEL` and `CPU` provide defaults
+for options omitted from `QEMU_ARGS`. The outer QEMU board is fixed to `virt`.
+Use `make run QEMU_ARGS='-help'` or see [backend profiles](docs/backends.md).
 
 Use **Ctrl-a, then x** to exit outer QEMU. Guest `poweroff -f` leaves the Zephyr
 host running.

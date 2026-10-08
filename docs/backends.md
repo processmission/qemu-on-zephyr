@@ -1,30 +1,63 @@
-# Accelerators and CPU models
+# Machine, accelerator and CPU options
 
-Backend and CPU selection is a build-time Zephyr configuration. Each profile
-has its own build directory; switching profiles does not require `make clean`.
-The machine still contains one VM and one vCPU.
+Pass QEMU-style options through `QEMU_ARGS` to `make build`, `make run`,
+`make check` or `make native-probe`:
 
-| `ACCEL` | Zephyr host | Guest CPU models | Execution |
+```sh
+make run QEMU_ARGS='-M zephyr-virt -accel zephyr -cpu cortex-a53'
+make run QEMU_ARGS='-M zephyr-virt,accel=tcg -cpu cortex-a72'
+make check QEMU_ARGS='-machine type=zephyr-virt -accel tcg -cpu cortex-a57'
+```
+
+Option spellings follow the [QEMU invocation interface](https://www.qemu.org/docs/master/system/invocation.html).
+
+These options select the QEMU machine inside Zephyr. The outer QEMU board is
+fixed to `virt` with TCG; the runner configures its EL2 support and CPU model
+for the selected guest backend. Machine, accelerator and CPU choices are
+written into the Zephyr build configuration. Each backend/CPU profile has
+its own build directory, so profiles can be switched with existing builds present.
+
+| Option | Supported values |
+| --- | --- |
+| `-M`, `-machine` | `zephyr-virt`, with optional `type=` and `accel=zephyr` or `accel=tcg` properties |
+| `-accel` | `zephyr`, `tcg`; the `accel=NAME` spelling is also accepted |
+| `-cpu` | `cortex-a53`, `cortex-a57`, `cortex-a72` |
+
+Use `make run QEMU_ARGS='-help'` for option help, or `-M help`, `-accel help`
+and `-cpu help` to list available selections. Help exits before source
+preparation, SDK selection or building. Invalid options, unsupported models,
+repeated options and conflicting accelerator selections fail before building.
+Each option occurs once; accelerator fallback lists are unsupported.
+
+`QEMU_ARGS` is parsed as quoted argument text. Make exports it through the
+environment. The guest machine provides one VM, one vCPU and 256 MiB RAM.
+Its implemented options are listed above.
+
+`ACCEL` and `CPU` provide defaults for options omitted from `QEMU_ARGS`.
+For example, `make run ACCEL=tcg QEMU_ARGS='-cpu cortex-a72'` selects TCG/A72.
+An explicit `-accel` or `-cpu` takes precedence over the corresponding Make
+variable. With no overrides, the profile is `zephyr-virt`, `zephyr`, Cortex-A53.
+
+| `-accel` | Zephyr host | Guest CPU models | Execution |
 | --- | --- | --- | --- |
 | `zephyr` | EL2, virtualization enabled | Cortex-A53, A57, A72 matching the host | Native ARM guest entry through `zhv` |
 | `tcg` | EL1, outer virtualization disabled | Cortex-A53, A57, A72 | Upstream ARM translator, software MMU and AArch64 JIT |
 
-The native accelerator retains the QEMU name `zephyr`; its kernel executor is
-`zhv`. There is no separate accelerator named ZFX in this repository.
+The native accelerator uses the QEMU name `zephyr`; its kernel executor is `zhv`.
 
 ```sh
-make run ACCEL=zephyr CPU=cortex-a53
-make run ACCEL=zephyr CPU=cortex-a57
-make run ACCEL=zephyr CPU=cortex-a72
+make run QEMU_ARGS='-accel zephyr -cpu cortex-a53'
+make run QEMU_ARGS='-accel zephyr -cpu cortex-a57'
+make run QEMU_ARGS='-accel zephyr -cpu cortex-a72'
 
-make run ACCEL=tcg CPU=cortex-a53
-make run ACCEL=tcg CPU=cortex-a57
-make run ACCEL=tcg CPU=cortex-a72
+make run QEMU_ARGS='-accel tcg -cpu cortex-a53'
+make run QEMU_ARGS='-accel tcg -cpu cortex-a57'
+make run QEMU_ARGS='-accel tcg -cpu cortex-a72'
 ```
 
-Use `make check` with the same variables for serial, timer, EL0/MMU and host
+Use `make check` with the same options for serial, timer, EL0/MMU and host
 scheduling acceptance. The checker verifies EL2 for native execution and EL1
-for TCG, the selected CPU/QOM accelerator types, and guest poweroff isolation.
+for TCG, the selected machine/CPU/QOM accelerator types, and guest poweroff isolation.
 For TCG it also checks distinct RW/RX code aliases and TCG execution counters.
 Return-state statistics are samples, not an instruction-counting facility.
 
@@ -78,7 +111,7 @@ multiple vCPUs and runtime accelerator switching are separate extensions.
 
 ## Direct west builds
 
-Make chooses `native.conf` or `tcg.conf`, the CPU Kconfig string and the
+Make chooses `native.conf` or `tcg.conf`, the machine and CPU Kconfig strings and the
 corresponding host overlay. To build the TCG/A72 profile directly:
 
 ```sh
@@ -86,10 +119,12 @@ corresponding host overlay. To build the TCG/A72 profile directly:
 make prepare
 west build -b qemu_cortex_a53 -d build/linux-tcg-cortex-a72 apps/qemu_linux -- \
     -DEXTRA_CONF_FILE=tcg.conf -DDTC_OVERLAY_FILE=tcg.overlay \
+    '-DCONFIG_QEMU_MACHINE_MODEL="zephyr-virt"' \
     '-DCONFIG_QEMU_CPU_MODEL="cortex-a72"'
-make run ACCEL=tcg CPU=cortex-a72
+make run QEMU_ARGS='-M zephyr-virt -accel tcg -cpu cortex-a72'
 ```
 
 For the standalone native diagnostic, use
-`make native-probe ACCEL=zephyr CPU=cortex-a57`. It intentionally does not
-accept `ACCEL=tcg`; Linux acceptance is the TCG integration test.
+`make native-probe QEMU_ARGS='-accel zephyr -cpu cortex-a57'`.
+The native diagnostic requires the `zephyr` accelerator. `make check` provides
+Linux acceptance for both backends.

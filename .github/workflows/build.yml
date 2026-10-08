@@ -21,8 +21,7 @@ jobs:
         accel: [zephyr, tcg]
         cpu: [cortex-a53, cortex-a57, cortex-a72]
     env:
-      ACCEL: ${{ matrix.accel }}
-      CPU: ${{ matrix.cpu }}
+      QEMU_ARGS: -M zephyr-virt -accel ${{ matrix.accel }} -cpu ${{ matrix.cpu }}
     steps:
       - uses: actions/checkout@v4
       - name: Install host dependencies

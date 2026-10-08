@@ -42,6 +42,11 @@ int qemu_zephyr_linux_main(void)
     int64_t next_stats = 5 * NANOSECONDS_PER_SECOND;
 #endif
 
+    if (strcmp(CONFIG_QEMU_MACHINE_MODEL, "zephyr-virt") != 0) {
+        error_report("unsupported machine model: %s (use zephyr-virt)",
+                     CONFIG_QEMU_MACHINE_MODEL);
+        return -EINVAL;
+    }
     if (strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a53") != 0 &&
         strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a57") != 0 &&
         strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a72") != 0) {
@@ -65,7 +70,7 @@ int qemu_zephyr_linux_main(void)
         return result;
     }
 #endif
-    machine = MACHINE(object_new(MACHINE_TYPE_NAME("zephyr-virt")));
+    machine = MACHINE(object_new(MACHINE_TYPE_NAME(CONFIG_QEMU_MACHINE_MODEL)));
     current_machine = machine;
     object_property_add_child(object_get_root(), "machine", OBJECT(machine));
     object_property_add_new_container(OBJECT(machine), "unattached");

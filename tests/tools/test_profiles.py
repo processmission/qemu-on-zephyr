@@ -7,6 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import project
+from qemu_config import load_config
 
 
 class ProfileTests(unittest.TestCase):
@@ -14,7 +15,7 @@ class ProfileTests(unittest.TestCase):
         original = os.environ.copy()
         self.addCleanup(os.environ.update, original)
         self.addCleanup(os.environ.clear)
-        for key in ("ACCEL", "CPU", "HOST_CPU"):
+        for key in ("ACCEL", "CPU", "HOST_CPU", "QEMU_ARGS"):
             os.environ.pop(key, None)
 
     def test_tcg_guest_model_does_not_require_matching_outer_cpu(self):
@@ -32,6 +33,26 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual("cortex-a57", command[command.index("-cpu") + 1])
         self.assertIn("linux-zephyr-cortex-a57", command[-1])
 
+    def test_qemu_options_select_the_build_and_outer_cpu_policy(self):
+        os.environ.update(ACCEL="zephyr", CPU="cortex-a53",
+                          QEMU_ARGS="-M type=zephyr-virt,accel=tcg -cpu cortex-a72")
+        config = load_config()
+        command = project.qemu_command(config=config)
+        self.assertEqual("virt,virtualization=off,secure=off,gic-version=3",
+                         command[command.index("-machine") + 1])
+        self.assertEqual("cortex-a53", command[command.index("-cpu") + 1])
+        self.assertEqual(project.BUILD / "linux-tcg-cortex-a72",
+                         project.build_directory(config=config))
+        self.assertEqual(str(project.build_directory(config=config) / "zephyr/zephyr.elf"),
+                         command[-1])
+
+        os.environ["QEMU_ARGS"] = "-M zephyr-virt -accel zephyr -cpu cortex-a57"
+        command = project.qemu_command()
+        self.assertEqual("virt,virtualization=on,secure=off,gic-version=3",
+                         command[command.index("-machine") + 1])
+        self.assertEqual("cortex-a57", command[command.index("-cpu") + 1])
+        self.assertIn("linux-zephyr-cortex-a57", command[-1])
+
     def test_invalid_profiles_fail_before_preparing_or_downloading(self):
         for values, profile in (({"ACCEL": "invalid", "CPU": "cortex-a53"}, "build"),
                                 ({"ACCEL": "zephyr", "CPU": "max"}, "build"),
@@ -45,4 +66,5 @@ class ProfileTests(unittest.TestCase):
                 )
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual("", result.stdout)
-                self.assertRegex(result.stderr, "Use ACCEL=|native-probe requires ACCEL=")
+                self.assertRegex(result.stderr, "Unsupported accelerator:|Unsupported CPU:|"
+                                 "native-probe requires ACCEL=")

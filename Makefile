@@ -5,7 +5,8 @@ PYTHON ?= $(CURDIR)/.venv/bin/python
 JOBS ?= 8
 ACCEL ?= zephyr
 CPU ?= cortex-a53
-export JOBS ACCEL CPU
+QEMU_ARGS ?=
+export JOBS ACCEL CPU QEMU_ARGS
 
 .PHONY: help host-deps setup doctor init update prepare assets build run check probe native-probe test-glib test-payload test-arch test-tools clean check-env
 help:
@@ -13,7 +14,7 @@ help:
 	@echo 'make setup         Prepare .venv, west workspace, SDK and verified guest assets'
 	@echo 'make doctor        Check host tools, SDK, Python packages and QEMU'
 	@echo 'make update        Synchronize the four pinned upstream repositories with west'
-	@echo 'make build / run   Build / start Linux; ACCEL=zephyr|tcg CPU=cortex-a53|cortex-a57|cortex-a72'
+	@echo 'make build / run   Build / start Linux; QEMU_ARGS="-M zephyr-virt -accel zephyr -cpu cortex-a53"'
 	@echo 'make check         Verify Linux, IRQs, EL0/MMU and host scheduling'
 	@echo 'make probe         QOM/PL011 regression'
 	@echo 'make native-probe  Native accelerator diagnostic'
@@ -22,6 +23,8 @@ help:
 	@echo 'make test-arch     EL1/EL2, FPU and executor regressions through west twister'
 	@echo 'make test-tools    Workspace setup and configuration tests'
 	@echo 'make clean         Delete generated builds, retaining SDK, venv and assets'
+	@echo 'QEMU_ARGS="-M help", "-accel help" or "-cpu help" lists supported selections'
+	@echo 'ACCEL and CPU provide defaults for options omitted from QEMU_ARGS'
 
 host-deps:
 	bash scripts/install-host-deps.sh

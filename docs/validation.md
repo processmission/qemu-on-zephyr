@@ -126,3 +126,25 @@ executor test cases. `tests/glib/check_cross.sh` passed with the selected SDK.
 Local validation logs are retained in `.host-compat/`, excluded through
 `.git/info/exclude`. The CI matrix runs Ubuntu 24.04 and macOS 14 Apple Silicon
 with separate SDK caches and log artifacts for each operating system.
+
+## QEMU-style Make options
+
+The `QEMU_ARGS` interface was validated on 2026-10-08. All six combinations of
+`zephyr`/`tcg` and Cortex-A53/A57/A72 passed `make check` on macOS Apple Silicon
+using SDK QEMU 10.0.2. The checker matched the requested inner machine, CPU and
+accelerator against the boot output, then verified guest and host behavior.
+The outer board remained `virt` throughout.
+
+The 25 tooling tests passed on macOS. The Make argument and configuration
+tests also passed on Ubuntu 24.04 with Python 3.12, exercising quoting,
+environment defaults, explicit overrides, machine properties, selection help,
+and rejection of unsupported or conflicting options before building.
+
+`make run QEMU_ARGS='-M zephyr-virt -accel zephyr -cpu cortex-a57'` entered the
+Linux shell. `uname -m` returned `aarch64`, and Ctrl-a followed by x terminated
+outer QEMU successfully. `make probe`, `make test-payload` and `make test-glib`
+passed with the configured machine support.
+
+Logs for this validation are retained under `.qemu-args/`, excluded through
+`.git/info/exclude`. CI selects every backend/CPU combination through
+`QEMU_ARGS` on both configured host operating systems.
