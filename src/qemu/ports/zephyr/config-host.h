@@ -9,6 +9,7 @@
 #undef unlikely
 #undef IS_ENABLED
 #undef IS_EMPTY
+#undef __unused
 
 #define CONFIG_ZEPHYR 1
 #define CONFIG_INT128 1

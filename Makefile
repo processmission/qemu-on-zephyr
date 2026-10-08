@@ -6,16 +6,25 @@ JOBS ?= 8
 ACCEL ?= zephyr
 CPU ?= cortex-a53
 QEMU_ARGS ?=
-export JOBS ACCEL CPU QEMU_ARGS
+QEMU_SHELL ?= 0
+QEMU_MODE ?= system
+GUEST_FILES ?=
+GUEST_DISK ?=
+export JOBS ACCEL CPU QEMU_ARGS QEMU_SHELL QEMU_MODE GUEST_FILES GUEST_DISK
 
-.PHONY: help host-deps setup doctor init update prepare assets build run check probe native-probe test-glib test-payload test-arch test-tools clean check-env
+.PHONY: help host-deps setup doctor init update prepare assets guest-disk build run check check-firmware check-user probe native-probe test-glib test-payload test-arch test-tools clean check-env
 help:
 	@echo 'First use: make host-deps (if needed), make setup, make run'
 	@echo 'make setup         Prepare .venv, west workspace, SDK and verified guest assets'
 	@echo 'make doctor        Check host tools, SDK, Python packages and QEMU'
 	@echo 'make update        Synchronize the four pinned upstream repositories with west'
-	@echo 'make build / run   Build / start Linux; QEMU_ARGS="-M zephyr-virt -accel zephyr -cpu cortex-a53"'
+	@echo 'make build / run   Build / start the guest; QEMU_ARGS="-M zephyr-virt -accel zephyr -cpu cortex-a53"'
+	@echo 'QEMU_SHELL=1      Enter Zephyr shell and wait for a manual QEMU command'
+	@echo 'QEMU_MODE=user    Build qemu-aarch64 Linux process emulation with TCG'
 	@echo 'make check         Verify Linux, IRQs, EL0/MMU and host scheduling'
+	@echo 'make guest-disk    Create an Ext2 image from GUEST_FILES or the downloaded Linux payloads'
+	@echo 'make check-firmware Verify ELF and raw firmware loading from the Zephyr filesystem'
+	@echo 'make check-user    Verify Linux process execution, syscalls and memory handling'
 	@echo 'make probe         QOM/PL011 regression'
 	@echo 'make native-probe  Native accelerator diagnostic'
 	@echo 'make test-payload  Read-only filesystem regression'
@@ -38,7 +47,7 @@ doctor:
 check-env:
 	@test -x "$(PYTHON)" -a -x "$(CURDIR)/.venv/bin/west" || { echo 'Run make setup first.' >&2; exit 1; }
 
-init prepare assets build run check probe native-probe test-payload test-arch clean: | check-env
+init prepare assets guest-disk build run check check-firmware check-user probe native-probe test-payload test-arch clean: | check-env
 	"$(PYTHON)" scripts/project.py $@
 
 update: init

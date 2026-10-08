@@ -7,6 +7,7 @@
 #include "exec/replay-core.h"
 #include "hw/intc/armv7m_nvic.h"
 
+#ifndef CONFIG_QEMU_USER
 ICountMode use_icount = ICOUNT_DISABLED;
 bool icount_align_option;
 
@@ -61,6 +62,7 @@ void replay_finish(void)
 {
     assert(replay_mode == REPLAY_MODE_NONE);
 }
+#endif
 
 bool qemu_log_in_addr_range(uint64_t addr)
 {

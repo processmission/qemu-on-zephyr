@@ -16,6 +16,12 @@ fixed to `virt` with TCG; the runner configures its EL2 support and CPU model
 for the selected guest backend. Machine, accelerator and CPU choices are
 written into the Zephyr build configuration. Each backend/CPU profile has
 its own build directory, so profiles can be switched with existing builds present.
+`make run QEMU_SHELL=1` opens the Zephyr shell; its `qemu-system-aarch64` command starts the
+guest with runtime image paths and CPU options. See [shell usage](shell.md).
+
+`make run` automatically starts the configured guest. `QEMU_MODE=user` selects
+the separate `qemu-aarch64` firmware, whose Linux system calls use Zephyr
+interfaces. See [Linux process emulation](user-mode.md).
 
 | Option | Supported values |
 | --- | --- |
@@ -118,7 +124,7 @@ corresponding host overlay. To build the TCG/A72 profile directly:
 . .tools/env.sh
 make prepare
 west build -b qemu_cortex_a53 -d build/linux-tcg-cortex-a72 apps/qemu_linux -- \
-    -DEXTRA_CONF_FILE=tcg.conf -DDTC_OVERLAY_FILE=tcg.overlay \
+    '-DEXTRA_CONF_FILE=tcg.conf;shell.conf' -DDTC_OVERLAY_FILE=tcg.overlay \
     '-DCONFIG_QEMU_MACHINE_MODEL="zephyr-virt"' \
     '-DCONFIG_QEMU_CPU_MODEL="cortex-a72"'
 make run QEMU_ARGS='-M zephyr-virt -accel tcg -cpu cortex-a72'

@@ -148,3 +148,60 @@ passed with the configured machine support.
 Logs for this validation are retained under `.qemu-args/`, excluded through
 `.git/info/exclude`. CI selects every backend/CPU combination through
 `QEMU_ARGS` on both configured host operating systems.
+
+## Zephyr shell and image filesystem
+
+On 2026-10-08, shell-driven Linux acceptance passed for both accelerators
+with Cortex-A53, A57 and A72. Each run mounted the outer VirtIO Block disk
+as read-only Ext2, listed the files, checked a missing-image error, and
+started Linux using `qemu-system-aarch64` with filesystem paths and a quoted
+kernel command line. The Zephyr shell and file operations remained available
+after guest poweroff.
+
+Native and TCG firmware acceptance passed for AArch64 ELF and raw images.
+The programs verified EL1, separately loaded data and BSS, and powered off
+through PSCI. The tests verified Ctrl-] termination, recovery from an ELF
+architecture error, and Zephyr reboot followed by another firmware launch.
+The TCG test selected Cortex-A72 at the shell in a Cortex-A53 build.
+
+Host scheduling is measured by an independent thread and queried on demand
+with `qemu-system-aarch64 -status`. Both backend checks passed with the
+observer progressing during guest execution and with no periodic observer
+lines on the console.
+
+The Ext2 creation and content-preservation test passed on macOS and Ubuntu
+24.04. Extracted kernel and initramfs hashes matched the source files after
+regenerating the disk for updated contents; unchanged contents reused the
+image. The 26 tooling tests, PL011 probe,
+filesystem regression, GLib differential test and 26 architecture test cases
+passed. The standalone native accelerator diagnostic also completed.
+
+Validation logs are retained in `.shell-runtime/`, excluded through
+`.git/info/exclude`. Guest console logs and firmware binaries are under
+`build/`. CI runs filesystem-based firmware acceptance for both accelerators.
+
+## Selectable startup and Linux user emulation
+
+On 2026-10-08, `QEMU_SHELL=1` system acceptance passed for Cortex-A53,
+Cortex-A57 and Cortex-A72 with both `zephyr` and `tcg`. Automatic startup
+also passed on the native A53 profile. Both backends passed ELF and raw
+firmware loading, loader errors, Ctrl-] termination and reboot followed by
+another launch. The scheduling observer reported a maximum interval of
+1010 ms without periodic heartbeat output.
+
+`make check-user` passed on all three CPU models. The real ELF program
+verified argv, environment, initialized data, BSS, Ext2 reads, private file
+mappings, Linux errno, brk, mmap, executable code modification, DC ZVA,
+clocks and VirtIO entropy. Fault checks covered invalid addresses, writes
+to read-only memory, DC ZVA on read-only memory and access after munmap.
+Ctrl-] returned status 130; the shell then executed another program.
+Automatic A53 user startup passed with quoted arguments and `-E` settings.
+
+A statically linked GNU/Linux AArch64 program built with Ubuntu 24.04 GCC
+13.3.0 completed glibc initialization, fopen/fgets/fclose, malloc/free,
+clock_gettime and printf. Two consecutive commands returned status zero,
+with virtual process IDs 1 and 2.
+
+The QOM/PL011 probe, 196 filesystem checks, GLib differential checks and
+28 tooling tests passed. Runtime logs are in `.user-runtime/` and the
+individual build directories; generated files are excluded from Git.

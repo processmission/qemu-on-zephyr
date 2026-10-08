@@ -37,7 +37,7 @@ execute_process(
           -o "${qemu_generated}/qapi" -b "${qemu_root}/qapi/qapi-schema.json"
   COMMAND_ERROR_IS_FATAL ANY
 )
-foreach(trace_dir qom qapi hw/core hw/char system util chardev target/arm hw/intc hw/arm hw/mem accel/tcg target/arm/tcg)
+foreach(trace_dir qom qapi hw/core hw/char system util chardev target/arm hw/intc hw/arm hw/mem accel/tcg target/arm/tcg linux-user)
   if(NOT EXISTS "${qemu_root}/${trace_dir}/trace-events")
     continue()
   endif()
@@ -72,7 +72,13 @@ zephyr_library_include_directories(
   "${qemu_root}/host/include/aarch64"
   "${qemu_root}/host/include/generic"
 )
-zephyr_library_compile_definitions(CONFIG_SOFTMMU COMPILING_SYSTEM_VS_USER _GNU_SOURCE)
+zephyr_library_compile_definitions(COMPILING_SYSTEM_VS_USER _GNU_SOURCE)
+if(CONFIG_QEMU_USER)
+  zephyr_library_compile_definitions(CONFIG_USER_ONLY CONFIG_LINUX_USER
+    COMPILING_PER_TARGET "CONFIG_TARGET=\"config-target.h\"")
+else()
+  zephyr_library_compile_definitions(CONFIG_SOFTMMU)
+endif()
 zephyr_library_compile_definitions(
   "QEMU_VERSION=\"${qemu_version}\""
   "QEMU_FULL_VERSION=\"${qemu_version}-zephyr\""
@@ -165,6 +171,11 @@ set(qemu_sources
   ports/zephyr/glib/glib.c
   ports/zephyr/os.c
 )
+if(CONFIG_QEMU_USER)
+  list(REMOVE_ITEM qemu_sources configs/targets/aarch64-softmmu.c target-info-qom.c)
+  list(APPEND qemu_sources ports/zephyr/user-target.c)
+  list(FILTER qemu_sources EXCLUDE REGEX "^(system/|chardev/|hw/char/|hw/xen/|accel/stubs/|stubs/hotplug|hw/core/(qdev-properties-system|qdev-clock|sysbus|clock|irq|gpio|resetcontainer|qdev-fw|vmstate-if)\\.c)")
+endif()
 foreach(source_file IN LISTS qemu_sources)
   zephyr_library_sources("${qemu_root}/${source_file}")
 endforeach()
@@ -180,7 +191,12 @@ file(GLOB qemu_qapi_sources
 zephyr_library_sources(${qemu_qapi_sources})
 zephyr_library_sources("${qemu_generated}/qapi/qapi-events-qdev.c")
 
+if(CONFIG_QEMU_USER)
+  include("${CMAKE_CURRENT_LIST_DIR}/user.cmake")
+endif()
+
 if(CONFIG_QEMU_SYSTEM)
+  zephyr_ld_options(-Wl,--wrap=exit)
   zephyr_library_include_directories("${qemu_root}/target/arm")
   set(qemu_native_common_sources
     accel/accel-common.c
@@ -207,6 +223,7 @@ if(CONFIG_QEMU_SYSTEM)
     util/guest-random.c
     util/id.c
     ports/zephyr/bootstrap.c
+    ports/zephyr/options.c
     ports/zephyr/accelerator.c
     ports/zephyr/console.c
     ports/zephyr/console-uart.c
@@ -260,12 +277,14 @@ if(CONFIG_QEMU_SYSTEM)
     include("${CMAKE_CURRENT_LIST_DIR}/tcg.cmake")
   endif()
   zephyr_library_sources("${qemu_generated}/qapi/qapi-events-run-state.c")
-  set(qemu_kernel "${qoz_root}/downloads/tuxrun-arm64-Image")
-  set(qemu_initrd "${qoz_root}/downloads/generic-arm64-rootfs.cpio.gz")
-  configure_file("${qemu_port}/payload.S.in" "${qemu_generated}/payload.S" @ONLY)
-  set_source_files_properties("${qemu_generated}/payload.S"
-    PROPERTIES OBJECT_DEPENDS "${qemu_kernel};${qemu_initrd}")
-  zephyr_library_sources("${qemu_generated}/payload.S")
+  if(CONFIG_QEMU_EMBEDDED_PAYLOAD)
+    set(qemu_kernel "${qoz_root}/downloads/tuxrun-arm64-Image")
+    set(qemu_initrd "${qoz_root}/downloads/generic-arm64-rootfs.cpio.gz")
+    configure_file("${qemu_port}/payload.S.in" "${qemu_generated}/payload.S" @ONLY)
+    set_source_files_properties("${qemu_generated}/payload.S"
+      PROPERTIES OBJECT_DEPENDS "${qemu_kernel};${qemu_initrd}")
+    zephyr_library_sources("${qemu_generated}/payload.S")
+  endif()
   foreach(source_file IN LISTS qemu_native_arm_sources)
     set_source_files_properties("${qemu_root}/${source_file}"
       PROPERTIES COMPILE_DEFINITIONS "COMPILING_PER_TARGET;CONFIG_TARGET=\"config-target.h\"")

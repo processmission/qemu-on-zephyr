@@ -17,8 +17,15 @@ class QemuConfig:
     machine: str = "zephyr-virt"
     accel: str = "zephyr"
     cpu: str = "cortex-a53"
+    manual_shell: bool = False
+    mode: str = "system"
+    program: tuple[str, ...] = ()
+    user_env: tuple[str, ...] = ()
+    strace: bool = False
 
     def validate_profile(self, profile: str) -> None:
+        if self.mode == "user" and profile == "native-probe":
+            raise RuntimeError("native-probe requires QEMU_MODE=system")
         if profile == "native-probe" and self.accel != "zephyr":
             raise RuntimeError("native-probe requires ACCEL=zephyr or -accel zephyr")
 
@@ -54,20 +61,38 @@ def _machine(value: str) -> tuple[str, str | None]:
 
 def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
     env = os.environ if environ is None else environ
+    shell_mode = env.get("QEMU_SHELL", "0")
+    if shell_mode not in ("0", "1"):
+        raise RuntimeError("QEMU_SHELL must be 0 (automatic startup) or 1 (manual shell)")
+    mode = env.get("QEMU_MODE", "system")
+    if mode not in ("system", "user"):
+        raise RuntimeError("QEMU_MODE must be system or user")
     parser = _Parser(
         prog="QEMU_ARGS", allow_abbrev=False,
-        description="Configure QEMU inside Zephyr for make build, run, check or native-probe. "
-                    "Selections are applied when building the Zephyr image.",
-        epilog="QEMU_ARGS overrides ACCEL and CPU for explicitly supplied options. "
-               "The current guest has 256 MiB RAM and one vCPU.",
+        description=("Configure qemu-aarch64 Linux process execution inside Zephyr."
+                     if mode == "user" else
+                     "Configure QEMU inside Zephyr for make build, run, check or native-probe. "
+                     "Selections are applied when building the Zephyr image."),
+        epilog=("User mode uses TCG with a 64 MiB process address space. "
+                "Arguments after the program path are passed to the program."
+                if mode == "user" else
+                "QEMU_ARGS overrides ACCEL and CPU for explicitly supplied options. "
+                "The current guest has 256 MiB RAM and one vCPU."),
     )
     parser.add_argument("-help", action="help", help="show supported options and exit")
     parser.add_argument("-M", "-machine", dest="machine", action="append",
-                        metavar="[type=]MACHINE[,accel=NAME]", help="machine name, or help")
+                        metavar="[type=]MACHINE[,accel=NAME]",
+                        help=argparse.SUPPRESS if mode == "user" else "machine name, or help")
     parser.add_argument("-accel", action="append", metavar="[accel=]NAME",
-                        help="zephyr, tcg, or help")
+                        help="tcg or help" if mode == "user" else "zephyr, tcg, or help")
     parser.add_argument("-cpu", action="append", metavar="MODEL",
                         help="cortex-a53, cortex-a57, cortex-a72, or help")
+    if mode == "user":
+        parser.add_argument("-E", dest="user_env", action="append", default=[],
+                            metavar="NAME=VALUE", help="process environment setting")
+        parser.add_argument("-strace", action="store_true", help="print translated Linux system calls")
+        parser.add_argument("program", nargs=argparse.REMAINDER,
+                            help="absolute Zephyr program path followed by its arguments")
     try:
         arguments = shlex.split(env.get("QEMU_ARGS", ""))
     except ValueError as error:
@@ -76,9 +101,12 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
     machine_option = _single(options.machine, "-machine")
     accel_option = _single(options.accel, "-accel")
     cpu_option = _single(options.cpu, "-cpu")
+    if mode == "user" and machine_option is not None:
+        raise RuntimeError("User mode uses TCG and accepts no machine option")
     for value, title, choices in (
         (machine_option, "Supported machines", MACHINES),
-        (accel_option, "Supported accelerators", ACCELERATORS),
+        (accel_option, "Supported accelerators",
+         {"tcg": ACCELERATORS["tcg"]} if mode == "user" else ACCELERATORS),
         (cpu_option, "Supported CPUs", dict.fromkeys(CPUS, "")),
     ):
         if value == "help":
@@ -92,7 +120,8 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
         accel_option = accel_option.removeprefix("accel=")
     if machine_accel is not None and accel_option is not None and machine_accel != accel_option:
         raise RuntimeError("Conflicting accelerators in -machine accel= and -accel")
-    accel = accel_option if accel_option is not None else machine_accel or env.get("ACCEL", "zephyr")
+    accel = accel_option if accel_option is not None else machine_accel or (
+        "tcg" if mode == "user" else env.get("ACCEL", "zephyr"))
     cpu = cpu_option or env.get("CPU", "cortex-a53")
     if machine not in MACHINES:
         raise RuntimeError(f"Unsupported machine: {machine!r}; use -M zephyr-virt or -M help")
@@ -100,4 +129,15 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
         raise RuntimeError(f"Unsupported accelerator: {accel!r}; use -accel zephyr|tcg or ACCEL=zephyr|tcg")
     if cpu not in CPUS:
         raise RuntimeError(f"Unsupported CPU: {cpu!r}; use -cpu cortex-a53|cortex-a57|cortex-a72")
-    return QemuConfig(machine=machine, accel=accel, cpu=cpu)
+    program = tuple(options.program) if mode == "user" else ()
+    user_env = tuple(options.user_env) if mode == "user" else ()
+    if mode == "user":
+        if machine_option is not None or accel != "tcg":
+            raise RuntimeError("User mode uses TCG and accepts no machine option")
+        if program and not program[0].startswith("/"):
+            raise RuntimeError("User program must have an absolute Zephyr filesystem path")
+        if len(user_env) > 8 or any("=" not in value or value.startswith("=") for value in user_env):
+            raise RuntimeError("Use up to eight -E NAME=VALUE options")
+    return QemuConfig(machine=machine, accel=accel, cpu=cpu, manual_shell=shell_mode == "1",
+                      mode=mode, program=program, user_env=user_env,
+                      strace=options.strace if mode == "user" else False)

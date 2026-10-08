@@ -40,9 +40,25 @@ bash scripts/install-host-deps.sh
 # Set up local tools, upstream sources, SDK and verified guest assets.
 make setup
 
-# Build and enter the Linux guest shell.
-make run
+# Build and enter the Zephyr shell.
+make run QEMU_SHELL=1
 ```
+
+At the `zephyr>` prompt, load Linux from the mounted filesystem:
+
+```text
+fs ls /images
+qemu-system-aarch64 -M zephyr-virt -accel zephyr -cpu cortex-a53 -kernel /images/Image -initrd /images/initramfs.cpio.gz
+```
+
+Use Ctrl-] to stop the guest and return to Zephyr. After a guest finishes,
+`kernel reboot cold` prepares another launch. See [shell and filesystem use](docs/shell.md)
+for custom kernels, ELF firmware and raw `-bios` images.
+
+`make run` starts Linux automatically. `QEMU_SHELL=1` waits for a manual
+command. Use `make run QEMU_MODE=user QEMU_SHELL=1 GUEST_FILES=/path/to/programs`
+to run Linux AArch64 executables with the `qemu-aarch64` shell command;
+see [Linux process emulation](docs/user-mode.md).
 
 **No venv activation or manual SDK export is needed for Make.**
 Select the inner QEMU machine, accelerator and guest CPU:
@@ -152,7 +168,7 @@ The outer platform is TCG-emulated in either profile.
 
 | Layer | Responsibility | Start reading |
 | :--- | :--- | :--- |
-| Application | QEMU worker and independent host heartbeat | [`apps/qemu_linux/`](apps/qemu_linux/) |
+| Application | QEMU worker and independent host scheduling observer | [`apps/qemu_linux/`](apps/qemu_linux/) |
 | Machine and adapters | Devices, Linux loading, GLib, files, console, event loop | [`src/qemu/ports/zephyr/`](src/qemu/ports/zephyr/) |
 | Accelerator | vCPU lifecycle, clocks, wait/kick and native execution | [`src/qemu/accel/zephyr/`](src/qemu/accel/zephyr/) |
 | TCG host adapter | Serial execution, wakeups and separate RW/RX code aliases | [`src/qemu/ports/zephyr/tcg.c`](src/qemu/ports/zephyr/tcg.c) |
@@ -196,8 +212,10 @@ versioned source or patches, **not** the generated trees.
 | :--- | :--- |
 | `make setup` / `make doctor` | Configure dependencies / diagnose the environment |
 | `make update` | Synchronize pinned upstream repositories with west |
-| `make build` / `make run` | Build the ELF / boot into the guest shell |
+| `make build` / `make run` | Build the ELF / start the configured guest; `QEMU_SHELL=1` waits at the shell |
 | `make check` | End-to-end Linux acceptance; stops QEMU afterward |
+| `make guest-disk` / `make check-firmware` | Prepare an Ext2 image / validate shell firmware loading |
+| `make check-user` | Validate Linux AArch64 processes and Zephyr syscall translation |
 | `make probe` / `make native-probe` | Device models / native accelerator diagnostics |
 | `make test-payload` / `make test-glib` | Filesystem / GLib compatibility regressions |
 | `make test-arch` / `make test-tools` | Architecture, FPU, executor / setup regressions |
@@ -217,8 +235,9 @@ software GICv3, Linux 6.4.16 and an initramfs shell.
   output lines and 26 architecture/FPU/executor test cases.
 - SDK-provided QEMU 10.0.2 and system QEMU 10.2.2 have booted the profile.
 
-Physical ARM boards, multiple VMs/vCPUs, block/network backends, migration,
-guest EL2/EL3 and VM restart/hotplug are outside the implemented or validated
+Physical ARM boards, multiple VMs/vCPUs, guest block/network devices, migration,
+guest EL2/EL3, recreating a VM within one Zephyr boot, and hotplug are outside
+the implemented or validated
 profile. This is an **experimental integration**, not a production isolation
 boundary. See [validation evidence and limits](docs/validation.md) and the
 [patch series](docs/patches.md).

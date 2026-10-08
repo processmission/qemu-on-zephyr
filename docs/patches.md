@@ -5,7 +5,7 @@ applies entries in that order and rejects duplicate, missing or unlisted
 patches. Upstream Git submodules remain clean.
 
 The original rollups were split by responsibility. Applying the first ten
-QEMU patches and all six Zephyr patches produces exactly the same modified
+QEMU patches and the first six Zephyr patches produces exactly the same modified
 upstream file trees as the original rollups. TCG and shared CPU support are
 additional patches after that baseline.
 
@@ -26,6 +26,7 @@ additional patches after that baseline.
 | 0011 | TCG code allocation through separate RW/RX aliases |
 | 0012 | GICv3-only CPU initialization for the selected models |
 | 0013 | Share the unchanged Cortex-A72 model across accelerators |
+| 0014 | Linux user ELF loading and checked TCG user memory on Zephyr |
 
 ## Zephyr
 
@@ -37,6 +38,7 @@ additional patches after that baseline.
 | 0004 | Hypervisor physical timer for the host |
 | 0005 | EL2 lazy FPU ownership |
 | 0006 | Native executor build hook and QEMU board configuration |
+| 0007 | Read-only Ext2 inode close and synchronization |
 
 These are module integration patches: new implementation files remain in
 `src/qemu/` and `src/zephyr/` and are overlaid by `make prepare`. The series

@@ -39,9 +39,25 @@ bash scripts/install-host-deps.sh
 # 配置本地工具、源码、SDK 和 guest 镜像。
 make setup
 
-# 编译并进入 Linux shell。
-make run
+# 编译并进入 Zephyr shell。
+make run QEMU_SHELL=1
 ```
+
+在 `zephyr>` 提示符下，从文件系统加载 Linux：
+
+```text
+fs ls /images
+qemu-system-aarch64 -M zephyr-virt -accel zephyr -cpu cortex-a53 -kernel /images/Image -initrd /images/initramfs.cpio.gz
+```
+
+按 Ctrl-] 可以停止 guest 并返回 Zephyr。guest 结束后，使用
+`kernel reboot cold` 重启 Zephyr，再启动另一个 guest。自定义镜像、ELF 固件和
+原始固件的使用方法见 [shell 与文件系统说明](docs/shell.md)。
+
+`make run` 默认自动启动 Linux。设置 `QEMU_SHELL=1` 后，Zephyr 等待手动输入命令。
+使用 `make run QEMU_MODE=user QEMU_SHELL=1 GUEST_FILES=/path/to/programs`
+编译用户模式固件，可以通过 `qemu-aarch64` shell 命令执行 Linux AArch64 程序，
+系统调用由 Zephyr 接口处理，详见[用户模式说明](docs/user-mode.md)。
 
 **Make 命令无需手动激活 venv，也无需每次设置 SDK 路径。**
 退出外层 QEMU：按 **Ctrl-a，再按 x**。guest 内执行 `poweroff -f` 后，Zephyr
@@ -139,8 +155,10 @@ MemoryRegion 在原生模式下与 Stage-2 共享 guest RAM，在 TCG 模式下�
 | :--- | :--- |
 | `make setup` / `make doctor` | 配齐环境 / 检查环境 |
 | `make update` | 用 west 同步固定版本依赖 |
-| `make build` / `make run` | 编译 / 启动 Linux shell |
+| `make build` / `make run` | 编译 / 自动启动 guest；`QEMU_SHELL=1` 等待手动命令 |
 | `make check` | 验证 Linux、定时器、EL0/MMU、宿主调度及 guest 关机 |
+| `make guest-disk` / `make check-firmware` | 创建 Ext2 镜像 / 验证 shell 固件加载 |
+| `make check-user` | 验证 Linux AArch64 程序执行和系统调用转换 |
 | `make probe` / `make native-probe` | 设备模型 / 原生 accelerator 探针 |
 | `make test-payload` / `make test-glib` | 只读文件系统 / GLib 差分测试 |
 | `make test-arch` / `make test-tools` | 架构、FPU、执行器 / 环境工具测试 |
@@ -160,7 +178,8 @@ Linux 6.4.16 initramfs shell**。
 - 回归覆盖 196 项文件系统断言、184 行 GLib 差分输出、26 项架构/FPU/执行器测试。
 - SDK 自带 QEMU 10.0.2 和系统 QEMU 10.2.2 均已运行过该配置。
 
-物理板、多 VM、多核、块设备/网络后端、迁移、guest EL2/EL3、VM 重启与热插拔
+物理开发板、多 VM、多核、guest 块设备和网络后端、迁移、guest EL2/EL3、
+同一次 Zephyr 运行中重新创建 VM，以及热插拔，
 尚不在已实现或已验证范围。这是实验性集成，尚不构成生产级隔离保证。
 
 [补丁序列](docs/patches.md) · [架构细节](docs/architecture.md) · [验证记录](docs/validation.md) ·

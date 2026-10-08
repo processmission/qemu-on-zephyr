@@ -11,3 +11,4 @@
 0011-tcg-map-separate-write-and-execute-aliases-on-zephyr.patch
 0012-target-arm-limit-zephyr-cpus-to-the-gicv3-interface.patch
 0013-target-arm-share-cortex-a72-across-accelerators.patch
+0014-linux-user-support-zephyr-execution.patch

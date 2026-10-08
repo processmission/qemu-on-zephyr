@@ -5,6 +5,7 @@
 #include "qemu/accel.h"
 #include "qemu/units.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "qobject/qlist.h"
 #include "hw/core/boards.h"
 #include "hw/core/sysbus.h"
@@ -13,6 +14,8 @@
 #include "hw/char/pl011.h"
 #include "hw/intc/arm_gicv3_common.h"
 #include "hw/arm/boot.h"
+#include "hw/core/loader.h"
+#include "system/reset.h"
 #include "target/arm/cpu.h"
 #include "system/address-spaces.h"
 #include "system/device_tree.h"
@@ -99,6 +102,14 @@ static void create_fdt(ZephyrVirtState *s)
     qemu_fdt_setprop(fdt, "/pl011@9000000", "clock-names", clock_names, sizeof(clock_names));
 }
 
+static void firmware_reset(void *opaque)
+{
+    CPUState *cpu = opaque;
+
+    cpu_reset(cpu);
+    cpu_set_pc(cpu, GUEST_RAM_IPA);
+}
+
 static void zephyr_virt_init(MachineState *machine)
 {
     ZephyrVirtState *s = (ZephyrVirtState *)machine;
@@ -158,6 +169,14 @@ static void zephyr_virt_init(MachineState *machine)
 #ifdef CONFIG_QEMU_NATIVE_PROBE_ONLY
     return;
 #endif
+    if (machine->firmware != NULL) {
+        if (load_image_targphys(machine->firmware, ipa, size, &error_fatal) <= 0) {
+            error_report("Could not load firmware '%s'", machine->firmware);
+            abort();
+        }
+        qemu_register_reset_nosnapshotload(firmware_reset, CPU(cpu));
+        return;
+    }
     create_fdt(s);
     s->boot_info.ram_size = size;
     s->boot_info.loader_start = ipa;

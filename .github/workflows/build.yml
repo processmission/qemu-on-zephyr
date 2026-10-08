@@ -43,11 +43,20 @@ jobs:
       - name: Run component regressions
         if: matrix.accel == 'zephyr' && matrix.cpu == 'cortex-a53'
         run: make probe test-payload test-glib test-arch
+      - name: Load ELF and raw firmware from the Zephyr filesystem
+        if: matrix.cpu == 'cortex-a53'
+        run: make check-firmware
+      - name: Verify manual startup and Linux process emulation
+        if: matrix.accel == 'tcg'
+        run: |
+          make check QEMU_SHELL=1
+          make check-user QEMU_ARGS="-cpu ${{ matrix.cpu }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-logs-${{ matrix.os }}-${{ matrix.accel }}-${{ matrix.cpu }}
           path: |
             build/*.log
+            build/user-*/user-validation.log
             build/twister/*.xml
             build/twister/*.json

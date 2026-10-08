@@ -14,23 +14,35 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from project import build_directory, qemu_command
 from qemu_config import load_config
+from guest_disk import prepare_disk
 
 
 def main():
     parser = argparse.ArgumentParser(description="Verify Linux console, IRQs and host scheduling.")
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument("--firmware", help="Zephyr filesystem path to the acceptance firmware")
+    parser.add_argument("--bios", action="store_true", help="load acceptance firmware as raw bytes")
+    parser.add_argument("--guest-cpu", choices=("cortex-a53", "cortex-a57", "cortex-a72"))
+    parser.add_argument("--expect-load-error", action="store_true")
+    parser.add_argument("--stop-firmware", action="store_true")
+    parser.add_argument("--reboot-after-firmware", action="store_true")
     args = parser.parse_args()
+    if (args.bios or args.expect_load_error or args.stop_firmware or args.reboot_after_firmware) and not args.firmware:
+        parser.error("firmware validation options require --firmware")
     workspace = Path(__file__).resolve().parents[2]
     config = load_config()
     build = build_directory(config=config)
-    accel, cpu = config.accel, config.cpu
+    accel, cpu = config.accel, args.guest_cpu or config.cpu
     if not args.no_build:
         subprocess.run(
             [sys.executable, str(workspace / "scripts/project.py"), "build"],
             cwd=workspace, check=True,
         )
+        prepare_disk(workspace)
 
-    logfile = workspace / "build" / f"{build.name}-validation.log"
+    suffix = ("firmware-stop" if args.stop_firmware else "firmware-error" if args.expect_load_error else "firmware-bios" if args.bios
+              else "firmware-elf" if args.firmware else "validation")
+    logfile = workspace / "build" / f"{build.name}-{suffix}.log"
     command = qemu_command(config=config)
     serial = command.index("-serial")
     command[serial:serial + 2] = [
@@ -76,12 +88,64 @@ def main():
 
     try:
         expect(r"QEMU Linux host EL" + ("1" if accel == "tcg" else "2"))
+        expect(r"Guest filesystem mounted at /images")
+        expect(r"QEMU shell ready: qemu-system-aarch64 -help")
+        if config.manual_shell:
+            send("")
+            expect(r"zephyr> ")
+            send("qemu-system-aarch64 -accel help")
+            expect(r"Compiled accelerator: " + accel)
+            expect(r"zephyr> ")
+            send("fs ls /images")
+            expect(r"firmware" if args.firmware else r"Image")
+            expect(r"zephyr> ")
+            send("qemu-system-aarch64 -kernel /images/missing-image")
+            expect(r"Cannot read /images/missing-image")
+            expect(r"zephyr> ")
+        command_line = (f"qemu-system-aarch64 -M zephyr-virt -accel {accel} -cpu {cpu} ")
+        if args.firmware:
+            command_line += ("-bios " if args.bios else "-kernel ") + args.firmware
+        else:
+            command_line += ('-kernel /images/Image -initrd /images/initramfs.cpio.gz '
+                             '-append "console=ttyAMA0 earlycon=pl011,0x09000000 '
+                             'rdinit=/bin/sh nokaslr panic=-1 qoz.shell=1"')
+        if config.manual_shell:
+            send(command_line)
         if accel == "tcg":
             aliases, _ = expect(r"QEMU_TCG_JIT RW=(0x[0-9a-f]+) RX=(0x[0-9a-f]+)")
             if aliases.group(1) == aliases.group(2):
                 raise RuntimeError("TCG must use distinct write and execute aliases")
         expect(r"QEMU machine=" + re.escape(config.machine) + r"-machine cpu=" +
                re.escape(cpu) + r"-arm-cpu accel=" + accel + r"-accel ")
+        if args.firmware:
+            if args.expect_load_error:
+                expect(r"Couldn't load elf .*: The image is from incompatible architecture")
+                expect(r"QEMU guest exited: -1")
+            else:
+                expect(r"QEMU_FIRMWARE_OK EL1 DATA BSS")
+                if args.stop_firmware:
+                    os.write(terminal, b"\x1d")
+                expect(r"QEMU guest exited: 0")
+            send("")
+            expect(r"zephyr> ")
+            send("fs ls /images")
+            expect(r"firmware")
+            expect(r"zephyr> ")
+            if args.reboot_after_firmware:
+                send("kernel reboot cold")
+                expect(r"QEMU shell ready: qemu-system-aarch64 -help")
+                send("")
+                expect(r"zephyr> ")
+                send(command_line)
+                expect(r"QEMU_FIRMWARE_OK EL1 DATA BSS")
+                expect(r"QEMU guest exited: 0")
+                send("")
+                expect(r"zephyr> ")
+            print(f"PASS: {accel}/{cpu}; filesystem firmware ({suffix}); shell restored")
+            print(f"Console: {logfile}")
+            return
+        if config.manual_shell:
+            expect(r"qoz\.shell=1")
         expect(r"Run /bin/sh as init process", timeout=180 if accel == "tcg" else 45)
         expect(r"~ # ")
         send("uname -m")
@@ -107,10 +171,7 @@ def main():
              "end=$(( ${up%%.*} + 8 )); while :; do read up rest < /proc/uptime; "
              "[ ${up%%.*} -ge $end ] && break; done; echo VALID_BUSY_END")
         expect(r"^VALID_BUSY_BEGIN$")
-        _, busy_output = expect(r"^VALID_BUSY_END$", timeout=20)
-        heartbeats = re.findall(r"ZEPHYR_HOST_HEARTBEAT=(\d+)", busy_output)
-        if not heartbeats:
-            raise RuntimeError("No independent Zephyr thread progress during guest spin")
+        expect(r"^VALID_BUSY_END$", timeout=20)
         expect(r"~ # ")
         el0 = max(map(int, re.findall(r"EL0=(\d+)", transcript)), default=0)
         mmu = max(map(int, re.findall(r"MMU-on=(\d+)", transcript)), default=0)
@@ -121,9 +182,25 @@ def main():
 
         send("poweroff -f")
         expect(r"reboot: Power down")
-        expect(r"ZEPHYR_HOST_HEARTBEAT=\d+", timeout=10)
+        expect(r"QEMU guest exited: 0", timeout=10)
+        send("")
+        expect(r"zephyr> ")
+        send("fs ls /images")
+        expect(r"Image")
+        expect(r"zephyr> ")
+        send("qemu-system-aarch64 -status")
+        observer, _ = expect(r"QEMU state=exited observer_ticks=(\d+) observer_max_gap_ms=(\d+)\n")
+        if int(observer.group(1)) == 0 or int(observer.group(2)) >= 4000:
+            raise RuntimeError("Independent Zephyr observer stalled while the guest was running")
+        expect(r"zephyr> ")
+        if "ZEPHYR_HOST_HEARTBEAT=" in transcript:
+            raise RuntimeError("Unexpected periodic host observer output")
+        send(command_line)
+        expect(r"QEMU already initialized; use kernel reboot cold before another guest")
+        expect(r"zephyr> ")
         print(f"PASS: {accel}/{cpu}; ARM64 Linux shell; timer IRQ {before}->{after}; "
-              f"host heartbeat during busy guest; EL0={el0}, MMU-on={mmu}; host survives poweroff")
+              f"host observer max gap {observer.group(2)}ms; EL0={el0}, MMU-on={mmu}; "
+              "shell survives poweroff")
         print(f"Console: {logfile}")
     finally:
         try:

@@ -1,0 +1,329 @@
+From fa14123dc09908d6fdb0f9e007d6a9b9775e89f6 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu@processmission.com>
+Date: Thu, 8 Oct 2026 19:43:52 +0800
+Subject: [PATCH] linux-user: support checked user memory and ELF loading on
+ Zephyr
+
+Signed-off-by: Chao Liu <chao.liu@processmission.com>
+---
+ accel/tcg/user-exec.c              | 25 +++++++++++++++++++++++++
+ linux-user/aarch64/target_elf.h    |  6 +++++-
+ linux-user/aarch64/target_signal.h |  2 ++
+ linux-user/elfload.c               |  9 +++++++++
+ linux-user/linuxload.c             |  9 +++++++++
+ target/arm/tcg/helper-a64.c        | 10 +++++-----
+ tcg/aarch64/tcg-target.c.inc       | 23 +++++++++++++++++------
+ util/path.c                        | 15 ++++++++++++++-
+ 8 files changed, 86 insertions(+), 13 deletions(-)
+
+diff --git a/accel/tcg/user-exec.c b/accel/tcg/user-exec.c
+index a35aca7..156e2e1 100644
+--- a/accel/tcg/user-exec.c
++++ b/accel/tcg/user-exec.c
+@@ -653,8 +653,10 @@ void tb_lock_page0(tb_page_addr_t address)
+ 
+     if (prot & PAGE_WRITE) {
+         pageflags_set_clear(start, last, 0, PAGE_WRITE);
++#ifndef CONFIG_ZEPHYR
+         mprotect(g2h_untagged_vaddr(start), last - start + 1,
+                  prot & (PAGE_READ | PAGE_EXEC) ? PROT_READ : PROT_NONE);
++#endif
+     }
+ }
+ 
+@@ -740,7 +742,9 @@ int page_unprotect(CPUState *cpu, tb_page_addr_t address, uintptr_t pc)
+         if (prot & PAGE_EXEC) {
+             prot = (prot & ~PAGE_EXEC) | PAGE_READ;
+         }
++#ifndef CONFIG_ZEPHYR
+         mprotect((void *)g2h_untagged_vaddr(start), len, prot & PAGE_RWX);
++#endif
+     }
+     mmap_unlock();
+ 
+@@ -772,6 +776,9 @@ static int probe_access_internal(CPUArchState *env, vaddr addr,
+     if (guest_addr_valid_untagged_vaddr(addr)) {
+         int page_flags = page_get_flags(addr);
+         if (page_flags & acc_flag) {
++#ifdef CONFIG_ZEPHYR
++            qemu_zephyr_user_probe(env_cpu(env), addr, fault_size, access_type, ra);
++#endif
+             if (access_type != MMU_INST_FETCH
+                 && cpu_plugin_mem_cbs_enabled(env_cpu(env))) {
+                 return TLB_FORCE_SLOW;
+@@ -817,6 +824,17 @@ void *probe_access(CPUArchState *env, vaddr addr, int size,
+ void *tlb_vaddr_to_host(CPUArchState *env, vaddr addr,
+                         MMUAccessType access_type, int mmu_idx)
+ {
++#ifdef CONFIG_ZEPHYR
++    /* Direct helper accesses stay within a page. A protected code page
++     * must take the normal probe path so writes invalidate its TBs. */
++    addr = cpu_untagged_addr_vaddr(env_cpu(env), addr);
++    int required = access_type == MMU_DATA_STORE ? PAGE_WRITE :
++                   access_type == MMU_INST_FETCH ? PAGE_EXEC : PAGE_READ;
++    if (!guest_addr_valid_untagged_vaddr(addr) ||
++        !(page_get_flags(addr) & required)) {
++        return NULL;
++    }
++#endif
+     return g2h_vaddr(env_cpu(env), addr);
+ }
+ 
+@@ -944,6 +962,9 @@ static void *cpu_mmu_lookup(CPUState *cpu, vaddr addr,
+         cpu_loop_exit_sigbus(cpu, addr, type, ra);
+     }
+ 
++#ifdef CONFIG_ZEPHYR
++    qemu_zephyr_user_probe(cpu, addr, memop_size(mop), type, ra);
++#endif
+     ret = g2h_vaddr(cpu, addr);
+     set_helper_retaddr(ra);
+     return ret;
+@@ -1237,6 +1258,10 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
+         cpu_loop_exit_atomic(cpu, retaddr);
+     }
+ 
++#ifdef CONFIG_ZEPHYR
++    qemu_zephyr_user_probe(cpu, addr, size, MMU_DATA_LOAD, retaddr);
++    qemu_zephyr_user_probe(cpu, addr, size, MMU_DATA_STORE, retaddr);
++#endif
+     ret = g2h_vaddr(cpu, addr);
+     set_helper_retaddr(retaddr);
+     return ret;
+diff --git a/linux-user/aarch64/target_elf.h b/linux-user/aarch64/target_elf.h
+index 4cdeb64..5a07fbf 100644
+--- a/linux-user/aarch64/target_elf.h
++++ b/linux-user/aarch64/target_elf.h
+@@ -16,7 +16,9 @@
+ #define HAVE_ELF_HWCAP          1
+ #define HAVE_ELF_HWCAP2         1
+ #define HAVE_ELF_PLATFORM       1
++#ifndef CONFIG_ZEPHYR
+ #define HAVE_ELF_CORE_DUMP      1
++#endif
+ #define HAVE_ELF_GNU_PROPERTY   1
+ 
+ /*
+@@ -27,7 +29,9 @@ typedef struct target_elf_gregset_t {
+     struct target_user_pt_regs pt;
+ } target_elf_gregset_t;
+ 
+-#if TARGET_BIG_ENDIAN
++#if defined(CONFIG_ZEPHYR)
++/* Zephyr provides system calls directly; no host Linux vDSO is mapped. */
++#elif TARGET_BIG_ENDIAN
+ # define VDSO_HEADER            "vdso-be.c.inc"
+ #else
+ # define VDSO_HEADER            "vdso-le.c.inc"
+diff --git a/linux-user/aarch64/target_signal.h b/linux-user/aarch64/target_signal.h
+index e509ac1..cdb863b 100644
+--- a/linux-user/aarch64/target_signal.h
++++ b/linux-user/aarch64/target_signal.h
+@@ -10,6 +10,8 @@
+ #define TARGET_SEGV_CPERR   10  /* Control protection fault */
+ 
+ #define TARGET_ARCH_HAS_SETUP_FRAME
++#ifndef CONFIG_ZEPHYR
+ #define TARGET_ARCH_HAS_SIGTRAMP_PAGE 1
++#endif
+ 
+ #endif /* AARCH64_TARGET_SIGNAL_H */
+diff --git a/linux-user/elfload.c b/linux-user/elfload.c
+index c4bdaa1..aedb46a 100644
+--- a/linux-user/elfload.c
++++ b/linux-user/elfload.c
+@@ -2,8 +2,10 @@
+ #include "qemu/osdep.h"
+ #include <sys/param.h>
+ 
++#ifndef CONFIG_ZEPHYR
+ #include <sys/prctl.h>
+ #include <sys/resource.h>
++#endif
+ 
+ #include "qemu.h"
+ #include "user/tswap-target.h"
+@@ -703,10 +705,17 @@ static abi_ulong create_elf_tables(abi_ulong p, int argc, int envc,
+     NEW_AUX_ENT(AT_BASE, (abi_ulong)(interp_info ? interp_info->load_addr : 0));
+     NEW_AUX_ENT(AT_FLAGS, (abi_ulong)0);
+     NEW_AUX_ENT(AT_ENTRY, info->entry);
++#ifdef CONFIG_ZEPHYR
++    NEW_AUX_ENT(AT_UID, 0);
++    NEW_AUX_ENT(AT_EUID, 0);
++    NEW_AUX_ENT(AT_GID, 0);
++    NEW_AUX_ENT(AT_EGID, 0);
++#else
+     NEW_AUX_ENT(AT_UID, (abi_ulong) getuid());
+     NEW_AUX_ENT(AT_EUID, (abi_ulong) geteuid());
+     NEW_AUX_ENT(AT_GID, (abi_ulong) getgid());
+     NEW_AUX_ENT(AT_EGID, (abi_ulong) getegid());
++#endif
+     NEW_AUX_ENT(AT_HWCAP, get_elf_hwcap(thread_cpu));
+     NEW_AUX_ENT(AT_CLKTCK, (abi_ulong) sysconf(_SC_CLK_TCK));
+     NEW_AUX_ENT(AT_RANDOM, (abi_ulong) u_rand_bytes);
+diff --git a/linux-user/linuxload.c b/linux-user/linuxload.c
+index 85d7009..7bc087b 100644
+--- a/linux-user/linuxload.c
++++ b/linux-user/linuxload.c
+@@ -47,12 +47,21 @@ static int prepare_binprm(struct linux_binprm *bprm)
+     if (!S_ISREG(mode)) {   /* Must be regular file */
+         return -EACCES;
+     }
++#ifndef CONFIG_ZEPHYR
++    /* Zephyr fs_stat exposes file type and size without permission bits. */
+     if (!(mode & 0111)) {   /* Must have at least one execute bit set */
+         return -EACCES;
+     }
++#endif
+ 
++#ifdef CONFIG_ZEPHYR
++    /* Zephyr's process adapter uses one virtual root identity. */
++    bprm->e_uid = 0;
++    bprm->e_gid = 0;
++#else
+     bprm->e_uid = geteuid();
+     bprm->e_gid = getegid();
++#endif
+ 
+     /* Set-uid? */
+     if (mode & S_ISUID) {
+diff --git a/target/arm/tcg/helper-a64.c b/target/arm/tcg/helper-a64.c
+index 9d80523..39e74ad 100644
+--- a/target/arm/tcg/helper-a64.c
++++ b/target/arm/tcg/helper-a64.c
+@@ -803,7 +803,7 @@ void HELPER(dc_zva)(CPUARMState *env, uint64_t vaddr_in)
+      */
+     mem = tlb_vaddr_to_host(env, vaddr, MMU_DATA_STORE, mmu_idx);
+ 
+-#ifndef CONFIG_USER_ONLY
++#if !defined(CONFIG_USER_ONLY) || defined(CONFIG_ZEPHYR)
+     if (unlikely(!mem)) {
+         /*
+          * Trap if accessing an invalid page.  DC_ZVA requires that we supply
+@@ -964,7 +964,7 @@ static uint64_t set_step(CPUARMState *env, uint64_t toaddr,
+      */
+     mem = tlb_vaddr_to_host(env, toaddr, MMU_DATA_STORE, memidx);
+ 
+-#ifndef CONFIG_USER_ONLY
++#if !defined(CONFIG_USER_ONLY) || defined(CONFIG_ZEPHYR)
+     if (unlikely(!mem)) {
+         /*
+          * Slow-path: just do one byte write. This will handle the
+@@ -1004,7 +1004,7 @@ static uint64_t set_step_tags(CPUARMState *env, uint64_t toaddr,
+      */
+     mem = tlb_vaddr_to_host(env, cleanaddr, MMU_DATA_STORE, memidx);
+ 
+-#ifndef CONFIG_USER_ONLY
++#if !defined(CONFIG_USER_ONLY) || defined(CONFIG_ZEPHYR)
+     if (unlikely(!mem)) {
+         /*
+          * Slow-path: just do one write. This will handle the
+@@ -1335,7 +1335,7 @@ static uint64_t copy_step(CPUARMState *env, uint64_t toaddr, uint64_t fromaddr,
+     wmem = tlb_vaddr_to_host(env, toaddr, MMU_DATA_STORE, wmemidx);
+     rmem = tlb_vaddr_to_host(env, fromaddr, MMU_DATA_LOAD, rmemidx);
+ 
+-#ifndef CONFIG_USER_ONLY
++#if !defined(CONFIG_USER_ONLY) || defined(CONFIG_ZEPHYR)
+     /*
+      * If we don't have host memory for both source and dest then just
+      * do a single byte copy. This will handle watchpoints, invalid pages,
+@@ -1409,7 +1409,7 @@ static uint64_t copy_step_rev(CPUARMState *env, uint64_t toaddr,
+     wmem = tlb_vaddr_to_host(env, toaddr, MMU_DATA_STORE, wmemidx);
+     rmem = tlb_vaddr_to_host(env, fromaddr, MMU_DATA_LOAD, rmemidx);
+ 
+-#ifndef CONFIG_USER_ONLY
++#if !defined(CONFIG_USER_ONLY) || defined(CONFIG_ZEPHYR)
+     /*
+      * If we don't have host memory for both source and dest then just
+      * do a single byte copy. This will handle watchpoints, invalid pages,
+diff --git a/tcg/aarch64/tcg-target.c.inc b/tcg/aarch64/tcg-target.c.inc
+index 4ebdef7..8d119fa 100644
+--- a/tcg/aarch64/tcg-target.c.inc
++++ b/tcg/aarch64/tcg-target.c.inc
+@@ -1683,6 +1683,11 @@ static TCGLabelQemuLdst *prepare_host_addr(TCGContext *s, HostAddress *h,
+     MemOp opc = get_memop(oi);
+     MemOp s_bits = opc & MO_SIZE;
+     unsigned a_mask;
++#ifdef CONFIG_ZEPHYR
++    const bool checked_user_access = true;
++#else
++    const bool checked_user_access = false;
++#endif
+ 
+     h->aa = atom_and_align_for_opc(s, opc,
+                                    have_lse2 ? MO_ATOM_WITHIN16
+@@ -1754,20 +1759,26 @@ static TCGLabelQemuLdst *prepare_host_addr(TCGContext *s, HostAddress *h,
+         h->index = addr_reg;
+         h->index_ext = addr_type;
+     } else {
+-        if (a_mask) {
++        if (a_mask || checked_user_access) {
+             ldst = new_ldst_label(s);
+ 
+             ldst->is_ld = is_ld;
+             ldst->oi = oi;
+             ldst->addr_reg = addr_reg;
+ 
+-            /* tst addr, #mask */
+-            tcg_out_logicali(s, Ilogic_imm_ANDSI, 0, TCG_REG_XZR, addr_reg,
+-                             a_mask);
++            if (!checked_user_access) {
++                /* tst addr, #mask */
++                tcg_out_logicali(s, Ilogic_imm_ANDSI, 0, TCG_REG_XZR, addr_reg,
++                                 a_mask);
++            }
+ 
+-            /* b.ne slow_path */
+             ldst->label_ptr[0] = s->code_ptr;
+-            tcg_out_insn(s, bcond_imm, B_C, TCG_COND_NE, 0);
++            /* Zephyr checks every user access in the existing slow helper. */
++            if (checked_user_access) {
++                tcg_out32(s, Ibcond_imm_B_C | COND_AL);
++            } else {
++                tcg_out_insn(s, bcond_imm, B_C, TCG_COND_NE, 0);
++            }
+         }
+ 
+         if (guest_base || addr_type == TCG_TYPE_I32) {
+diff --git a/util/path.c b/util/path.c
+index e156589..0e67861 100644
+--- a/util/path.c
++++ b/util/path.c
+@@ -21,9 +21,15 @@ void init_paths(const char *prefix)
+     if (prefix[0] == '/') {
+         base = g_strdup(prefix);
+     } else {
++#ifdef CONFIG_ZEPHYR
++        /* Zephyr's mounted paths are absolute and have no process cwd. */
++        fprintf(stderr, "QEMU interpreter prefix must be absolute\n");
++        exit(EXIT_FAILURE);
++#else
+         char *cwd = g_get_current_dir();
+         base = g_build_filename(cwd, prefix, NULL);
+         g_free(cwd);
++#endif
+     }
+ 
+     hash = g_hash_table_new(g_str_hash, g_str_equal);
+@@ -48,10 +54,17 @@ const char *path(const char *name)
+         ret = value ? value : name;
+     } else {
+         char *save = g_strdup(name);
++#ifdef CONFIG_ZEPHYR
++        char *full = g_strdup_printf("%s%s", base, name);
++        struct stat st;
++        bool exists = stat(full, &st) == 0;
++#else
+         char *full = g_build_filename(base, name, NULL);
++        bool exists = access(full, F_OK) == 0;
++#endif
+ 
+         /* Look for the path; record the result, pass or fail.  */
+-        if (access(full, F_OK) == 0) {
++        if (exists) {
+             /* Exists.  */
+             g_hash_table_insert(hash, save, full);
+             ret = full;
+-- 
+2.56.0
+

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 menuconfig QEMU
-	bool "QEMU system emulation subsystem"
+	bool "QEMU emulation subsystem"
 	depends on ARM64
 	select REQUIRES_FULL_LIBC
 	select STATIC_INIT_GNU
@@ -14,7 +14,20 @@ if QEMU
 
 config QEMU_SYSTEM
 	bool
-	default y if QEMU_ZEPHYR_ACCEL || QEMU_TCG
+	default y if QEMU_ZEPHYR_ACCEL || (QEMU_TCG && !QEMU_USER)
+
+config QEMU_USER
+	bool "AArch64 Linux user emulation"
+	depends on QEMU_TCG
+	help
+	  Execute Linux ELF programs with TCG and translate their system calls
+	  to Zephyr. Each program has a bounded private address space.
+
+config QEMU_USER_MEMORY_MIB
+	int "Linux process address space in MiB"
+	default 64
+	range 16 128
+	depends on QEMU_USER
 
 config QEMU_ZEPHYR_ACCEL
 	bool "Native ARM64 virtualization accelerator"
@@ -38,10 +51,31 @@ config QEMU_MACHINE_MODEL
 	  QEMU machine selected before realization. The supported machine is
 	  zephyr-virt, with one ARM64 CPU, PL011 and a software GICv3.
 
+config QEMU_SHELL
+	bool "Start QEMU from the Zephyr shell"
+	depends on (QEMU_SYSTEM || QEMU_USER) && SHELL && FILE_SYSTEM
+	help
+	  Provide qemu-system-aarch64 with image paths and guest configuration.
+	  The shell owns UART input and forwards it while the guest is running.
+
+config QEMU_EMBEDDED_PAYLOAD
+	bool "Expose built-in Linux and initramfs files under /guest"
+	depends on QEMU_SYSTEM
+	default y if !QEMU_SHELL && !QEMU_NATIVE_PROBE_ONLY
+
+config QEMU_AUTOSTART
+	bool "Execute a QEMU command automatically after boot"
+	depends on QEMU_SHELL
+
+config QEMU_STARTUP_COMMAND
+	string "Automatic QEMU shell command"
+	depends on QEMU_AUTOSTART
+	default "qemu-system-aarch64 -kernel /images/Image -initrd /images/initramfs.cpio.gz"
+
 config QEMU_CPU_MODEL
 	string "Guest ARM64 CPU model"
 	default "cortex-a53"
-	depends on QEMU_SYSTEM
+	depends on QEMU_SYSTEM || QEMU_USER
 	help
 	  QEMU CPU model selected before machine realization. The native
 	  accelerator requires a supported model matching the host CPU.
@@ -60,11 +94,12 @@ config QEMU_NATIVE_PROBE_ONLY
 	  mounting or starting a Linux image. This is an intermediate diagnostic.
 
 config QEMU_HOST_HEARTBEAT
-	bool "Print an independent host-thread scheduling diagnostic"
+	bool "Track independent host-thread scheduling"
 	depends on QEMU_SYSTEM
 	help
 	  The Linux test application starts a higher-priority Zephyr thread
-	  which reports its progress while the virtual CPU is running.
+	  which maintains scheduling counters while the virtual CPU is running.
+	  The shell exposes these counters through qemu-system-aarch64 -status.
 
 config QEMU_PL011_PROBE
 	bool "PL011 object and memory dispatch probe"

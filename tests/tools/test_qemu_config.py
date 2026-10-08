@@ -9,6 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from qemu_config import QemuConfig, load_config
+from project import build_directory
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -60,10 +61,35 @@ class QemuConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "native-probe requires"):
             config.validate_profile("native-probe")
 
+    def test_manual_and_process_builds_have_distinct_configuration(self):
+        automatic = load_config({})
+        manual = load_config({"QEMU_SHELL": "1"})
+        user = load_config({"QEMU_SHELL": "1", "QEMU_MODE": "user", "ACCEL": "zephyr"})
+        self.assertFalse(automatic.manual_shell)
+        self.assertTrue(manual.manual_shell)
+        self.assertEqual("tcg", user.accel)
+        self.assertEqual(3, len({build_directory(config=option)
+                                 for option in (automatic, manual, user)}))
+        for env in ({"QEMU_SHELL": "true"}, {"QEMU_MODE": "linux"},
+                    {"QEMU_MODE": "user", "QEMU_ARGS": "-accel zephyr"},
+                    {"QEMU_MODE": "user", "QEMU_ARGS": "-M zephyr-virt"}):
+            with self.subTest(env=env), self.assertRaises(RuntimeError):
+                load_config(env)
+
+    def test_process_arguments_preserve_quoting_and_option_boundaries(self):
+        config = load_config({"QEMU_MODE": "user", "QEMU_ARGS":
+                              "-cpu cortex-a72 -strace -E 'MESSAGE=hello world' /images/hello 'two words' -cpu program-option"})
+        self.assertEqual("cortex-a72", config.cpu)
+        self.assertEqual(("/images/hello", "two words", "-cpu", "program-option"), config.program)
+        self.assertEqual(("MESSAGE=hello world",), config.user_env)
+        self.assertTrue(config.strace)
+        with self.assertRaisesRegex(RuntimeError, "absolute"):
+            load_config({"QEMU_MODE": "user", "QEMU_ARGS": "relative-program"})
+
 
 class MakeQemuArgsTests(unittest.TestCase):
     def run_make(self, arguments: str) -> subprocess.CompletedProcess[str]:
-        env = dict(os.environ, ACCEL="zephyr", CPU="cortex-a53",
+        env = dict(os.environ, ACCEL="zephyr", CPU="cortex-a53", QEMU_MODE="system", QEMU_SHELL="0",
                    ZEPHYR_SDK_INSTALL_DIR=str(ROOT / "west/west.yml"))
         return subprocess.run(
             ["make", "--no-print-directory", "run", f"QEMU_ARGS={arguments}"],

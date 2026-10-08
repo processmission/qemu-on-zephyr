@@ -22,6 +22,7 @@ locks are used on both supported operating systems.
 Host packages provide Git, Make, Python/venv, C/C++ build tools, patch, tar, xz,
 wget, file, which, CA certificates, pkg-config and GLib development headers.
 Homebrew also provides dtc, gperf and libmagic on macOS.
+e2fsprogs supplies `mke2fs` for the guest image filesystem on both platforms.
 CMake, Ninja and west come from the project venv. The cross-compiler and QEMU
 come from the SDK; a system QEMU package is not required.
 
@@ -39,6 +40,10 @@ make doctor
 make check
 make run
 ```
+
+`make run QEMU_SHELL=1` enters the Zephyr shell and mounts the guest image disk at
+`/images`. Start Linux with `qemu-system-aarch64 -kernel /images/Image
+-initrd /images/initramfs.cpio.gz` at that prompt. See [shell usage](shell.md).
 
 Setup creates `.venv`, initializes a local west workspace, updates the four
 upstream repositories, installs Python requirements through
@@ -114,6 +119,10 @@ and Git can inspect repositories initially fetched by west.
 | `make run QEMU_ARGS='-M zephyr-virt -accel tcg -cpu cortex-a72'` | Select the inner machine, accelerator and CPU model |
 | `make run QEMU_ARGS='-M help'` | List supported inner machines; `-accel help` and `-cpu help` list the other selections |
 | `ACCEL=tcg CPU=cortex-a72 make run` | Provide defaults for options omitted from `QEMU_ARGS` |
+| `make guest-disk GUEST_FILES=/path/to/images` | Create an Ext2 disk from a directory of images and firmware |
+| `make run GUEST_DISK=/path/to/disk.img` | Attach an existing image disk read-only to Zephyr |
+| `make run QEMU_SHELL=1` | Wait for a manual QEMU command at the Zephyr prompt |
+| `make run QEMU_MODE=user QEMU_SHELL=1` | Build the `qemu-aarch64` Linux process shell command |
 | `JOBS=16 make build` | Set parallel build jobs |
 | `BOOTSTRAP_PYTHON=python3.12 make setup` | Choose the Python used to create the venv |
 | `make update` | Synchronize sources to the manifest |

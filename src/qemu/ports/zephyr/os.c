@@ -12,6 +12,22 @@
 #include "qapi/qapi-commands-control.h"
 #include "migration/vmstate.h"
 #include "chardev/char.h"
+#if defined(CONFIG_QEMU_SYSTEM) || defined(CONFIG_QEMU_USER)
+__thread jmp_buf *qemu_zephyr_exit_env;
+__thread int qemu_zephyr_exit_status;
+void __real_exit(int status) __attribute__((noreturn));
+void __wrap_exit(int status) __attribute__((noreturn));
+
+void __wrap_exit(int status)
+{
+    if (qemu_zephyr_exit_env != NULL) {
+        qemu_zephyr_exit_status = status;
+        longjmp(*qemu_zephyr_exit_env, 1);
+    }
+    __real_exit(status);
+}
+#endif
+
 #ifdef CONFIG_QEMU_SYSTEM
 #include "system/cpus.h"
 #include "exec/cpu-common.h"

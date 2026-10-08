@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
 #include "qemu/module.h"
+#include "qemu/cutils.h"
+#include "qemu/main-loop.h"
 #include "qemu/target-info-qom.h"
 #include "qemu/target-info.h"
 #include "qemu/zephyr.h"
@@ -27,11 +29,41 @@
 #include "payload-fs.h"
 #include "accelerator.h"
 
+#ifdef CONFIG_QEMU_EMBEDDED_PAYLOAD
 extern const uint8_t qemu_guest_image_start[], qemu_guest_image_end[];
 extern const uint8_t qemu_guest_initrd_start[], qemu_guest_initrd_end[];
+#endif
 void qemu_zephyr_console_poll(void);
 
-int qemu_zephyr_linux_main(void)
+static bool started;
+static bool stop_requested;
+
+bool qemu_zephyr_started(void)
+{
+    return qatomic_read(&started);
+}
+
+void qemu_zephyr_request_stop(void)
+{
+    qatomic_set(&stop_requested, true);
+    if (qemu_zephyr_started()) {
+        qemu_notify_event();
+    }
+}
+
+int qemu_zephyr_mount_payload(void)
+{
+#ifdef CONFIG_QEMU_EMBEDDED_PAYLOAD
+    return qemu_zephyr_payload_mount(qemu_guest_image_start,
+                                     qemu_guest_image_end - qemu_guest_image_start,
+                                     qemu_guest_initrd_start,
+                                     qemu_guest_initrd_end - qemu_guest_initrd_start);
+#else
+    return 0;
+#endif
+}
+
+static int run_guest(const struct qemu_zephyr_options *options)
 {
     AccelClass *accel_class;
     AccelState *accel;
@@ -42,16 +74,19 @@ int qemu_zephyr_linux_main(void)
     int64_t next_stats = 5 * NANOSECONDS_PER_SECOND;
 #endif
 
-    if (strcmp(CONFIG_QEMU_MACHINE_MODEL, "zephyr-virt") != 0) {
+    if (qemu_zephyr_started()) {
+        return -EALREADY;
+    }
+    if (strcmp(options->machine, "zephyr-virt") != 0) {
         error_report("unsupported machine model: %s (use zephyr-virt)",
-                     CONFIG_QEMU_MACHINE_MODEL);
+                     options->machine);
         return -EINVAL;
     }
-    if (strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a53") != 0 &&
-        strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a57") != 0 &&
-        strcmp(CONFIG_QEMU_CPU_MODEL, "cortex-a72") != 0) {
+    if (strcmp(options->cpu, "cortex-a53") != 0 &&
+        strcmp(options->cpu, "cortex-a57") != 0 &&
+        strcmp(options->cpu, "cortex-a72") != 0) {
         error_report("unsupported CPU model: %s (use cortex-a53/a57/a72)",
-                     CONFIG_QEMU_CPU_MODEL);
+                     options->cpu);
         return -EINVAL;
     }
 
@@ -60,17 +95,8 @@ int qemu_zephyr_linux_main(void)
     qemu_init_subsystems();
     qemu_init_clocks(qemu_timer_notify_cb);
     cpu_timers_init();
-#ifndef CONFIG_QEMU_NATIVE_PROBE_ONLY
-    result = qemu_zephyr_payload_mount(qemu_guest_image_start,
-                                       qemu_guest_image_end - qemu_guest_image_start,
-                                       qemu_guest_initrd_start,
-                                       qemu_guest_initrd_end - qemu_guest_initrd_start);
-    if (result != 0) {
-        error_report("payload mount failed: %d", result);
-        return result;
-    }
-#endif
-    machine = MACHINE(object_new(MACHINE_TYPE_NAME(CONFIG_QEMU_MACHINE_MODEL)));
+    qatomic_set(&started, true);
+    machine = MACHINE(object_new(MACHINE_TYPE_NAME("zephyr-virt")));
     current_machine = machine;
     object_property_add_child(object_get_root(), "machine", OBJECT(machine));
     object_property_add_new_container(OBJECT(machine), "unattached");
@@ -78,24 +104,20 @@ int qemu_zephyr_linux_main(void)
     object_property_add_new_container(OBJECT(machine), "peripheral-anon");
     object_property_add_child(machine_get_container("unattached"), "sysbus",
                                OBJECT(sysbus_get_default()));
-    machine->cpu_type = g_strdup_printf("%s-arm-cpu", CONFIG_QEMU_CPU_MODEL);
+    machine->cpu_type = g_strdup_printf("%s-arm-cpu", options->cpu);
 #ifndef CONFIG_QEMU_NATIVE_PROBE_ONLY
-    machine->kernel_filename = g_strdup("/guest/Image");
-    machine->initrd_filename = g_strdup("/guest/initramfs.cpio.gz");
+    machine->kernel_filename = options->kernel[0] ? g_strdup(options->kernel) : NULL;
+    machine->initrd_filename = options->initrd[0] ? g_strdup(options->initrd) : NULL;
+    machine->firmware = options->firmware[0] ? g_strdup(options->firmware) : NULL;
     g_free(machine->kernel_cmdline);
-    machine->kernel_cmdline = g_strdup("console=ttyAMA0 earlycon=pl011,0x09000000 "
-                                      "rdinit=/bin/sh nokaslr panic=-1");
+    machine->kernel_cmdline = g_strdup(options->append);
 #endif
     if (!set_preferred_target_page_bits(MACHINE_GET_CLASS(machine)->minimum_page_bits)) {
         return -EINVAL;
     }
     machine_memory_init();
     phase_advance(PHASE_MACHINE_CREATED);
-#ifdef CONFIG_QEMU_TCG
-    accel_class = accel_find("tcg");
-#else
-    accel_class = accel_find("zephyr");
-#endif
+    accel_class = accel_find(options->accelerator);
     assert(accel_class != NULL);
     accel = ACCEL(object_new_with_class(OBJECT_CLASS(accel_class)));
 #ifdef CONFIG_QEMU_TCG
@@ -122,9 +144,13 @@ int qemu_zephyr_linux_main(void)
     return 0;
 #endif
     qemu_system_reset(SHUTDOWN_CAUSE_GUEST_RESET);
-    printf("Starting ARM64 Linux using QEMU arm_load_kernel and %s accelerator\n",
+    printf("Starting ARM64 guest using QEMU loaders and %s accelerator\n",
            current_accel_name());
     while (runstate_is_running()) {
+        if (qatomic_read(&stop_requested)) {
+            qemu_zephyr_cpu_stop();
+            return 0;
+        }
         if (qemu_zephyr_process_requests(&exit_status)) {
             qemu_zephyr_cpu_stop();
             return exit_status;
@@ -161,4 +187,42 @@ int qemu_zephyr_linux_main(void)
     }
     qemu_zephyr_cpu_stop();
     return 0;
+}
+
+int qemu_zephyr_run(const struct qemu_zephyr_options *options)
+{
+    jmp_buf exit_target;
+    int result;
+
+    /* Process-style loader exits return to the owning shell worker. */
+    qemu_zephyr_exit_env = &exit_target;
+    if (setjmp(exit_target) == 0) {
+        result = run_guest(options);
+    } else {
+        if (qemu_zephyr_started()) {
+            qemu_zephyr_cpu_stop();
+        }
+        result = -qemu_zephyr_exit_status;
+    }
+    qemu_zephyr_exit_env = NULL;
+    return result;
+}
+
+int qemu_zephyr_linux_main(void)
+{
+    struct qemu_zephyr_options options = {
+        .machine = CONFIG_QEMU_MACHINE_MODEL,
+        .cpu = CONFIG_QEMU_CPU_MODEL,
+#ifdef CONFIG_QEMU_TCG
+        .accelerator = "tcg",
+#else
+        .accelerator = "zephyr",
+#endif
+        .kernel = "/guest/Image",
+        .initrd = "/guest/initramfs.cpio.gz",
+        .append = "console=ttyAMA0 earlycon=pl011,0x09000000 rdinit=/bin/sh nokaslr panic=-1",
+    };
+    int result = qemu_zephyr_mount_payload();
+
+    return result != 0 ? result : qemu_zephyr_run(&options);
 }

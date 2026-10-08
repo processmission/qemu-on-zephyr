@@ -1,0 +1,14 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/ {
+    chosen {
+        zephyr,entropy = &user_entropy;
+    };
+};
+
+&virtio_mmio5 {
+    status = "okay";
+    user_entropy: entropy {
+        compatible = "virtio,device4";
+        status = "okay";
+    };
+};

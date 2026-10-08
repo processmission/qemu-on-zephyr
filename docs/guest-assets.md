@@ -19,6 +19,8 @@ The generic BusyBox initramfs comes from
 matching the asset in QEMU `tests/functional/aarch64/test_raspi4.py`. Only the
 generic initramfs is reused; this profile does not boot a Raspberry Pi kernel.
 
-The checked combination boots Cortex-A53 with `rdinit=/bin/sh`. No ext4 image,
-block device or self-built Linux tree is needed for the sample. Guest binaries
-are test inputs, not source files or release artifacts of this module.
+The checked combination boots Cortex-A53 with `rdinit=/bin/sh`. `make run`
+places the verified assets in an Ext2 disk and mounts it at `/images` in
+Zephyr. The shell command reads the kernel and initramfs from that filesystem.
+`GUEST_FILES` and `GUEST_DISK` select custom contents or an existing disk; see
+[shell usage](shell.md). Guest binaries are external runtime inputs.

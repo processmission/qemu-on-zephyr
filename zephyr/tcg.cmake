@@ -75,6 +75,14 @@ set(tcg_sources
   target/arm/tcg/tlb-insns.c
   target/arm/gicv5-stubs.c
 )
+if(CONFIG_QEMU_USER)
+  list(REMOVE_ITEM tcg_sources
+    accel/tcg/cputlb.c accel/tcg/watchpoint.c system/watchpoint.c
+    ports/zephyr/tcg.c
+    target/arm/tcg/cpu32.c target/arm/tcg/cpregs-at.c
+    target/arm/tcg/psci.c target/arm/tcg/tlb-insns.c target/arm/gicv5-stubs.c)
+  list(APPEND tcg_sources accel/tcg/user-exec.c accel/tcg/user-exec-stub.c)
+endif()
 foreach(source_file IN LISTS tcg_sources)
   zephyr_library_sources("${qemu_root}/${source_file}")
   set_source_files_properties("${qemu_root}/${source_file}"

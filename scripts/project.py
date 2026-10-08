@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+from dataclasses import replace
 import configparser
 import fcntl
 import hashlib
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -16,6 +18,7 @@ import yaml
 
 from environment import command_env, qemu_path
 from qemu_config import QemuConfig, load_config
+from guest_disk import disk_path, prepare_disk
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
@@ -189,7 +192,7 @@ def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
     config.validate_profile(profile)
     accel, cpu = config.accel, config.cpu
     prepare()
-    if profile in ("linux", "native-probe"):
+    if profile in ("linux", "native-probe") and config.mode == "system":
         assets()
     app = {"linux": "apps/qemu_linux", "native-probe": "apps/qemu_linux",
            "probe": "apps/qemu_probe", "payload": "tests/payload/app"}[profile]
@@ -203,18 +206,39 @@ def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
                f"-DBUILD_VERSION={PINS['zephyr'][:12]}-qoz"]
     if profile in ("linux", "native-probe"):
         configs = ["native.conf" if accel == "zephyr" else "tcg.conf"]
+        if config.mode == "user":
+            configs.append("user.conf")
         if profile == "native-probe":
             configs.append("native-probe.conf")
+        else:
+            configs.append("shell.conf")
+            command.append("-DCONFIG_QEMU_AUTOSTART=" + ("n" if config.manual_shell else "y"))
+            startup = (f"qemu-system-aarch64 -M {config.machine} -accel {accel} -cpu {cpu} "
+                       "-kernel /images/Image -initrd /images/initramfs.cpio.gz")
+            if config.mode == "user":
+                if not config.manual_shell and not config.program:
+                    raise RuntimeError("QEMU_MODE=user requires a program in QEMU_ARGS or QEMU_SHELL=1")
+                arguments = ["qemu-aarch64", "-cpu", cpu]
+                if config.strace:
+                    arguments.append("-strace")
+                for setting in config.user_env:
+                    arguments.extend(("-E", setting))
+                startup = shlex.join((*arguments, *config.program))
+            startup = startup.replace("\\", "\\\\").replace('"', '\\"')
+            command.append(f'-DCONFIG_QEMU_STARTUP_COMMAND="{startup}"')
         command.append("-DEXTRA_CONF_FILE=" + ";".join(configs))
-        command.append("-DDTC_OVERLAY_FILE=" + ("tcg.overlay" if accel == "tcg" else "app.overlay"))
+        overlay = "tcg.overlay" if accel == "tcg" else "app.overlay"
+        if config.mode == "user":
+            overlay += ";user.overlay"
+        command.append("-DDTC_OVERLAY_FILE=" + overlay)
         command.append(f'-DCONFIG_QEMU_CPU_MODEL="{cpu}"')
-        command.append(f'-DCONFIG_QEMU_MACHINE_MODEL="{config.machine}"')
+        if config.mode == "system":
+            command.append(f'-DCONFIG_QEMU_MACHINE_MODEL="{config.machine}"')
     env["CMAKE_BUILD_PARALLEL_LEVEL"] = os.environ.get("JOBS", "8")
     # Native west owns configure/build decisions. Reconfigure on an SDK or Python
     # change, otherwise keep its incremental build path.
     cache = build_dir / "CMakeCache.txt"
-    signature = "\n".join((str(sys.executable), env["ZEPHYR_SDK_INSTALL_DIR"], PINS["zephyr"]))
-    signature += f"\n{config.machine}\n{accel}\n{cpu}"
+    signature = "\n".join(command)
     stamp = build_dir / ".qoz-config"
     if cache.exists() and stamp.exists() and stamp.read_text() == signature:
         command = command[:command.index("--")]
@@ -227,6 +251,10 @@ def build_directory(profile: str = "linux", *, config: QemuConfig | None = None)
     config.validate_profile(profile)
     if profile in ("linux", "native-probe"):
         accel, cpu = config.accel, config.cpu
+        if profile == "linux" and config.mode == "user":
+            profile = "user"
+        if profile in ("linux", "user") and config.manual_shell:
+            profile += "-shell"
         if accel != "zephyr" or cpu != "cortex-a53":
             return BUILD / f"{profile}-{accel}-{cpu}"
     return BUILD / profile
@@ -253,6 +281,14 @@ def qemu_command(profile: str = "linux", interactive: bool = False,
         command += ["-chardev", "stdio,id=console,mux=on,signal=off", "-serial", "chardev:console"]
     else:
         command += ["-serial", "stdio"]
+    if profile == "linux":
+        disk = str(disk_path(ROOT)).replace(",", ",,")
+        command += ["-global", "virtio-mmio.force-legacy=false",
+                    "-drive", f"if=none,id=guestfiles,file={disk},format=raw,readonly=on",
+                    "-device", "virtio-blk-device,bus=virtio-mmio-bus.4,drive=guestfiles"]
+        if config.mode == "user":
+            command += ["-object", "rng-random,id=entropy,filename=/dev/urandom",
+                        "-device", "virtio-rng-device,bus=virtio-mmio-bus.5,rng=entropy"]
     return command + ["-kernel", str(build_directory(profile, config=config) / "zephyr/zephyr.elf")]
 
 
@@ -282,7 +318,7 @@ def regression(profile):
 
 def main():
     parser = argparse.ArgumentParser(description="Prepare sources, build and run QEMU on Zephyr.")
-    parser.add_argument("action", choices=("init", "prepare", "assets", "build", "run", "check",
+    parser.add_argument("action", choices=("init", "prepare", "assets", "guest-disk", "build", "run", "check", "check-firmware", "check-user",
                                          "probe", "native-probe", "test-payload", "test-arch", "clean"))
     action = parser.parse_args().action
     if action == "init":
@@ -291,16 +327,39 @@ def main():
         prepare()
     elif action == "assets":
         assets()
+    elif action == "guest-disk":
+        if not os.environ.get("GUEST_FILES"):
+            assets()
+        prepare_disk(ROOT, create=True)
     elif action in ("build", "run", "native-probe"):
         profile = "native-probe" if action == "native-probe" else "linux"
         build(profile)
         if action != "build":
+            if profile == "linux":
+                prepare_disk(ROOT)
             os.execvp(qemu_command(profile, True)[0], qemu_command(profile, True))
     elif action in ("probe", "test-payload"):
         regression("probe" if action == "probe" else "payload")
     elif action == "check":
+        if load_config().mode == "user":
+            raise RuntimeError("Use make check-user for QEMU_MODE=user")
         build()
+        prepare_disk(ROOT)
         run(sys.executable, "apps/qemu_linux/check.py", "--no-build", env=command_env())
+    elif action == "check-firmware":
+        config = replace(load_config(), manual_shell=True)
+        if config.mode != "system":
+            raise RuntimeError("check-firmware requires QEMU_MODE=system")
+        build(config=config)
+        env = command_env()
+        env["QEMU_SHELL"] = "1"
+        run(sys.executable, "tests/firmware/check.py", env=env)
+    elif action == "check-user":
+        config = load_config({**os.environ, "QEMU_MODE": "user", "ACCEL": "tcg", "QEMU_SHELL": "1"})
+        build(config=config)
+        env = command_env()
+        env.update(QEMU_MODE="user", QEMU_SHELL="1", ACCEL="tcg")
+        run(sys.executable, "tests/user/check.py", env=env)
     elif action == "test-arch":
         prepare()
         run(sys.executable, "-m", "west", "twister", "-p", "qemu_cortex_a53",

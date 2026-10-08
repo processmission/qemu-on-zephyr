@@ -1,8 +1,9 @@
 # Implementation map
 
-The application starts a POSIX worker with a statically allocated 128 KiB stack
-and calls `qemu_zephyr_linux_main()`. An independent higher-priority Zephyr
-thread supplies scheduling evidence through periodic heartbeat messages.
+The application starts a POSIX worker with a statically allocated 128 KiB stack.
+The `qemu-system-aarch64` shell command validates and copies guest options,
+then wakes the worker to call `qemu_zephyr_run()`. An independent higher-priority Zephyr
+thread maintains scheduling counters queried through `qemu-system-aarch64 -status`.
 
 ## QEMU model and event loop
 
@@ -13,16 +14,37 @@ QEMU timers, deferred RCU callbacks and backend execution returns.
 
 `machine.c` defines `zephyr-virt-machine` with a selected Cortex-A53/A57/A72,
 256 MiB guest RAM, the original PL011 and software GICv3 models. It generates the guest DTB
-and calls upstream `arm_load_kernel()`. The guest Image and initramfs are
-embedded in the host ELF, exposed through `/guest` by `payload-fs.c`, and read
-by the QEMU file adapter. Native execution borrows the executor RAM; TCG
+and calls upstream `arm_load_kernel()` for Linux or ELF firmware. Raw firmware
+uses QEMU's image loader and starts at the RAM base. The guest files are read
+from Zephyr-mounted filesystems through the POSIX/QEMU file adapter. The
+sample mounts an Ext2 disk supplied by outer VirtIO Block at `/images`.
+`CONFIG_QEMU_EMBEDDED_PAYLOAD` additionally exposes built-in files under
+`/guest` through `payload-fs.c`. Native execution borrows the executor RAM; TCG
 uses a separate buffer accessed through its software MMU.
 
 `os.c` implements the supported host synchronization and allocation facilities.
 The GLib subset supplies the data structures and APIs needed by the selected
-QEMU sources. Unsupported host operations fail explicitly. The physical UART
-ISR only queues bytes and kicks the owner; device handlers execute on the QEMU
-thread.
+QEMU sources. Unsupported host operations fail explicitly. Zephyr's serial
+shell backend receives UART input and forwards guest bytes through bypass
+mode. The QEMU owner consumes the input queue and runs device handlers.
+Guest exit or Ctrl-] restores the Zephyr prompt. A worker-local exit target
+converts QEMU loader exits into shell return statuses. One QEMU instance is
+initialized per Zephyr boot; `kernel reboot cold` resets its global state.
+
+## Linux process execution
+
+`QEMU_MODE=user` selects the sources in `zephyr/user.cmake` and compiles QEMU
+with `CONFIG_USER_ONLY`. `user.c` initializes the user TCG accelerator and
+QEMU Linux ELF loader, supplies process arguments and environment, and handles
+AArch64 `svc` exceptions through `user-syscall.c`. That adapter converts Linux
+syscall numbers, flags, errors and ABI structures to Zephyr operations.
+
+`user-memory.c` implements the guest address space and private file mappings
+with QEMU page metadata. AArch64 generated memory operations use TCG's checked
+helpers; write protection, invalid addresses and self-modifying code are
+handled before host access. The program memory and descriptors are reset for
+successive commands. VirtIO RNG supplies entropy for the ELF auxiliary vector
+and `getrandom`. See [user-mode interfaces](user-mode.md).
 
 ## Native execution
 
