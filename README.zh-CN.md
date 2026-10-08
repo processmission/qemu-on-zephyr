@@ -24,14 +24,16 @@
 
 ## 快速开始
 
-开发环境为 **Linux + Python 3.12 或更新版本**，参考环境是 Ubuntu 24.04。
+开发环境支持 **Linux x86_64/AArch64 和 macOS Apple Silicon**，需要
+**Python 3.12 或更新版本**。Linux 参考环境为 Ubuntu 24.04；macOS 需要先安装
+Xcode Command Line Tools 和 Homebrew，详见[环境要求](docs/setup.md#host-requirements)。
 不需要 ARM 开发板或宿主 KVM；外层 QEMU 使用 TCG 提供 ARM 测试平台。
 
 ```sh
 git clone https://github.com/processmission/qemu-on-zephyr.git
 cd qemu-on-zephyr
 
-# 新机器先安装系统依赖；普通用户会使用 sudo。
+# 安装系统依赖：Linux 使用系统包管理器，macOS 使用 Homebrew。
 bash scripts/install-host-deps.sh
 
 # 配置本地工具、源码、SDK 和 guest 镜像。
@@ -88,7 +90,7 @@ make doctor
 
 ```mermaid
 flowchart TB
-    host["Linux 开发机"] --> outer["外层 QEMU · ARM virt · TCG"]
+    host["Linux / macOS Apple Silicon 开发机"] --> outer["外层 QEMU · ARM virt · TCG"]
     outer --> zephyr["Zephyr 宿主 · 原生 EL2 / TCG EL1"]
     zephyr --> models["QEMU module<br/>ARM CPU · QOM/qdev · 内存与设备模型"]
     models --> accel["zephyr accelerator"]

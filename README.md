@@ -24,7 +24,9 @@ running ARM64 Linux through native EL2 virtualization or TCG translation.
 
 ## Quick start
 
-**Start with Linux and Python 3.12+.** Ubuntu 24.04 is the reference setup.
+**Use Linux x86_64/AArch64 or macOS Apple Silicon, with Python 3.12+.**
+Ubuntu 24.04 is the reference Linux setup. On macOS, install Xcode Command
+Line Tools and Homebrew first; see [host requirements](docs/setup.md#host-requirements).
 No ARM board or host KVM is required: the development host runs an outer
 QEMU instance using TCG.
 
@@ -32,7 +34,7 @@ QEMU instance using TCG.
 git clone https://github.com/processmission/qemu-on-zephyr.git
 cd qemu-on-zephyr
 
-# Fresh host: install system packages (uses sudo outside a root shell).
+# Install host packages (Linux package manager or Homebrew on macOS).
 bash scripts/install-host-deps.sh
 
 # Set up local tools, upstream sources, SDK and verified guest assets.
@@ -117,7 +119,7 @@ survival after guest poweroff.
 
 ```mermaid
 flowchart TB
-    host["Linux development host · x86_64 / AArch64"]
+    host["Development host · Linux x86_64/AArch64 · macOS Apple Silicon"]
     host --> outer["Outer QEMU · ARM virt · TCG · 512 MiB"]
     subgraph platform["Emulated ARM platform"]
         subgraph el2["Zephyr host · EL2 native / EL1 TCG"]

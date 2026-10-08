@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Cross-compile check for the Zephyr GLib compatibility layer.
 #
-# This only compiles objects; it deliberately does not link any host x86
-# library.  The object's undefined symbols must be libc/libgcc symbols only.
+# Compile objects with the SDK toolchain. The object's undefined symbols must
+# come from libc/libgcc; host GLib libraries are excluded.
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 set -euo pipefail

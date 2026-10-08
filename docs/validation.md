@@ -95,4 +95,34 @@ Profile consoles are retained as `build/linux*-validation.log`. Other evidence
 is in `build/native-model-mismatch.log`, `build/final-arch.log`,
 `build/final-glib.log`, `build/final-tools.log`, `build/final-probe.log` and
 `build/final-payload.log`. These are local tests; the CI workflow separately
-runs the six backend/CPU combinations.
+runs the six backend/CPU combinations on Ubuntu and macOS.
+
+## Linux and macOS hosts
+
+Host compatibility was validated on 2026-10-08 with Zephyr SDK 1.0.1 and
+SDK-provided QEMU 10.0.2:
+
+| Host | Python | SDK configuration |
+| --- | --- | --- |
+| macOS 26.5.2, Apple Silicon | 3.14.8 | Reused a registered macOS SDK |
+| Ubuntu 24.04, AArch64 container | 3.12.3 | Installed compiler and host tools with `west sdk install` |
+
+Both environments passed the host dependency installer, `make setup`,
+`make doctor`, and the 17 environment, manifest, patch and profile tests in
+`make test-tools`. SDK and QEMU selection tests execute the installed tools,
+including a QEMU override whose path contains spaces. The macOS dependency
+installer also passed with the system-provided `/bin/bash`.
+
+Both hosts passed `make check` with Cortex-A53 under the `zephyr` and `tcg`
+backends. Acceptance checked the Linux shell, timer IRQ growth, EL0/MMU
+execution, concurrent host scheduling and host survival after guest poweroff.
+The TCG runs also verified separate writable and executable code mappings.
+
+On each host, `make probe`, `make test-payload`, `make test-glib` and
+`make test-arch` passed: the PL011/QOM probe, 196 filesystem checks, matching
+184-line GLib output, allocation overflow handling, and 26 architecture/FPU/
+executor test cases. `tests/glib/check_cross.sh` passed with the selected SDK.
+
+Local validation logs are retained in `.host-compat/`, excluded through
+`.git/info/exclude`. The CI matrix runs Ubuntu 24.04 and macOS 14 Apple Silicon
+with separate SDK caches and log artifacts for each operating system.

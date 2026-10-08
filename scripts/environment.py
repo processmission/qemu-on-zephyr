@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Workspace-local tools shared by setup, builds and diagnostics (stdlib only)."""
 
 import json
 import os
@@ -27,7 +26,9 @@ def sdk_problem(path):
     return None
 
 
-def sdk_qemu(sdk):
+def sdk_qemu(sdk: Path) -> Path:
+    if platform.system() == "Darwin":
+        return sdk / "hosttools/usr/bin/qemu-system-aarch64"
     arch = {"arm64": "aarch64", "AMD64": "x86_64"}.get(platform.machine(), platform.machine())
     return sdk / f"hosttools/sysroots/{arch}-pokysdk-linux/usr/bin/qemu-system-aarch64"
 
@@ -93,13 +94,17 @@ def command_env(require_sdk=True):
     return env
 
 
-def host_problems():
+def host_problems() -> list[str]:
     problems = []
-    if platform.system() != "Linux" or platform.machine() not in ("x86_64", "aarch64", "arm64"):
-        problems.append("supported host: Linux x86_64 or AArch64 (use a Linux VM on other systems)")
+    system, machine = platform.system(), platform.machine()
+    supported = {"Linux": ("x86_64", "aarch64", "arm64"), "Darwin": ("arm64", "aarch64")}
+    if machine not in supported.get(system, ()):
+        problems.append("supported hosts: Linux x86_64/AArch64 and macOS Apple Silicon "
+                        f"with Zephyr SDK {SDK_VERSION}; found {system} {machine}")
     if sys.version_info < (3, 12):
         problems.append("Python 3.12 or newer is required by the pinned Zephyr")
-    for command in HOST_COMMANDS:
+    commands = HOST_COMMANDS + (("dtc", "gperf") if system == "Darwin" else ())
+    for command in commands:
         if not shutil.which(command):
             problems.append(f"missing host command: {command}")
     return problems

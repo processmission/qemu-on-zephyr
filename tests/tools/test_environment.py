@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Regression coverage for SDK selection and dependency ownership."""
 
 import configparser
 import json
@@ -9,7 +8,6 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
 import yaml
 
@@ -20,57 +18,43 @@ import project
 
 class EnvironmentTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
-        self.tools = self.root / ".tools"
-        self.tools.mkdir()
-        for name, value in (("TOOLS", self.tools), ("STATE", self.tools / "environment.json")):
-            handle = patch.object(environment, name, value)
-            handle.start()
-            self.addCleanup(handle.stop)
-        handle = patch.dict(os.environ, {}, clear=True)
-        handle.start()
-        self.addCleanup(handle.stop)
-        handle = patch.object(Path, "home", return_value=self.root)
-        handle.start()
-        self.addCleanup(handle.stop)
-
-    def sdk(self, name, version=environment.SDK_VERSION):
-        path = self.root / name
-        path.mkdir(parents=True)
-        (path / "sdk_version").write_text(version)
-        compiler = path / "gnu/aarch64-zephyr-elf/bin/aarch64-zephyr-elf-gcc"
-        compiler.parent.mkdir(parents=True)
-        compiler.write_text("#!/bin/sh\nexit 0\n")
-        compiler.chmod(0o755)
-        return path
+        original = os.environ.copy()
+        self.addCleanup(os.environ.update, original)
+        self.addCleanup(os.environ.clear)
+        for key in ("ZEPHYR_SDK_INSTALL_DIR", "QEMU_SYSTEM_AARCH64", "https_proxy", "HTTPS_PROXY"):
+            os.environ.pop(key, None)
+        self.sdk = environment.find_sdk()
+        self.assertIsNotNone(self.sdk, "Run make setup before make test-tools")
 
     def test_explicit_invalid_sdk_is_not_silently_replaced(self):
-        self.sdk(f"zephyr-sdk-{environment.SDK_VERSION}")
-        os.environ["ZEPHYR_SDK_INSTALL_DIR"] = str(self.root / "wrong")
+        os.environ["ZEPHYR_SDK_INSTALL_DIR"] = str(self.sdk / "sdk_version")
         with self.assertRaisesRegex(RuntimeError, "fix or unset"):
             environment.find_sdk()
 
     def test_saved_sdk_survives_a_new_shell(self):
-        sdk = self.sdk("custom-sdk")
-        environment.STATE.write_text(json.dumps({"sdk": str(sdk)}))
-        self.assertEqual(sdk, environment.find_sdk())
+        saved = Path(json.loads(environment.STATE.read_text())["sdk"])
+        self.assertEqual(saved, self.sdk)
+        result = subprocess.run(
+            [sys.executable, str(environment.ROOT / "scripts/setup.py"), "--doctor"],
+            capture_output=True, text=True, check=True,
+        )
+        self.assertIn(f"Zephyr SDK {environment.SDK_VERSION}: {saved}", result.stdout)
 
     def test_incomplete_sdk_is_rejected(self):
-        sdk = self.sdk("incomplete")
-        (sdk / "gnu/aarch64-zephyr-elf/bin/aarch64-zephyr-elf-gcc").unlink()
-        self.assertIn("missing AArch64", environment.sdk_problem(sdk))
+        with tempfile.TemporaryDirectory() as directory:
+            incomplete = Path(directory)
+            os.symlink(self.sdk / "sdk_version", incomplete / "sdk_version")
+            self.assertIn("missing AArch64", environment.sdk_problem(incomplete))
 
-    def test_registered_sdk_is_reused(self):
-        sdk = self.sdk("registered-sdk")
-        registry = self.root / ".cmake/packages/Zephyr-sdk"
-        registry.mkdir(parents=True)
-        (registry / "entry").write_text(str(sdk / "cmake"))
-        self.assertEqual(sdk, environment.find_sdk())
+    def test_explicit_sdk_compiler_runs(self):
+        os.environ["ZEPHYR_SDK_INSTALL_DIR"] = str(self.sdk)
+        self.assertEqual(self.sdk, environment.find_sdk())
+        compiler = self.sdk / "gnu/aarch64-zephyr-elf/bin/aarch64-zephyr-elf-gcc"
+        target = subprocess.check_output([str(compiler), "-dumpmachine"], text=True).strip()
+        self.assertEqual("aarch64-zephyr-elf", target)
 
     def test_explicit_qemu_is_validated(self):
-        os.environ["QEMU_SYSTEM_AARCH64"] = str(self.root / "missing-qemu")
+        os.environ["QEMU_SYSTEM_AARCH64"] = str(self.sdk / "sdk_version")
         with self.assertRaisesRegex(RuntimeError, "not executable"):
             environment.qemu_path()
 
@@ -81,13 +65,21 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(os.environ["https_proxy"], environment.command_env(False)["https_proxy"])
 
     def test_sdk_qemu_precedes_system_qemu(self):
-        sdk = self.sdk("sdk")
-        qemu = environment.sdk_qemu(sdk)
-        qemu.parent.mkdir(parents=True)
-        qemu.write_text("#!/bin/sh\nexit 0\n")
-        qemu.chmod(0o755)
-        with patch.object(environment.shutil, "which", return_value="/system/qemu"):
-            self.assertEqual(str(qemu), environment.qemu_path(sdk))
+        qemu = environment.sdk_qemu(self.sdk)
+        self.assertEqual(str(qemu), environment.qemu_path(self.sdk))
+        version = subprocess.check_output([str(qemu), "--version"], text=True)
+        self.assertIn("QEMU emulator version", version)
+
+    def test_explicit_qemu_path_with_spaces_runs(self):
+        with tempfile.TemporaryDirectory(prefix="qemu path ") as directory:
+            executable = Path(directory) / "qemu-system-aarch64"
+            executable.symlink_to(environment.sdk_qemu(self.sdk))
+            os.environ["QEMU_SYSTEM_AARCH64"] = str(executable)
+            configured = environment.command_env()
+            self.assertEqual(str(executable), configured["QEMU_SYSTEM_AARCH64"])
+            self.assertEqual(directory, configured["QEMU_BIN_PATH"])
+            subprocess.run([configured["QEMU_SYSTEM_AARCH64"], "--version"],
+                           check=True, capture_output=True)
 
 
 class ManifestTests(unittest.TestCase):

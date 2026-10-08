@@ -10,13 +10,14 @@ permissions:
   contents: read
 
 jobs:
-  linux:
-    runs-on: ubuntu-24.04
+  build:
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
+        os: [ubuntu-24.04, macos-14]
         accel: [zephyr, tcg]
         cpu: [cortex-a53, cortex-a57, cortex-a72]
     env:
@@ -32,6 +33,7 @@ jobs:
             .tools/zephyr-sdk-1.0.1
             downloads
             ~/.cache/pip
+            ~/Library/Caches/pip
           key: qoz-${{ runner.os }}-${{ runner.arch }}-sdk-1.0.1-${{ hashFiles('requirements*.txt', 'tests/requirements.txt') }}
       - name: Set up workspace and SDK
         run: make setup
@@ -45,7 +47,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-logs-${{ matrix.accel }}-${{ matrix.cpu }}
+          name: test-logs-${{ matrix.os }}-${{ matrix.accel }}-${{ matrix.cpu }}
           path: |
             build/*.log
             build/twister/*.xml

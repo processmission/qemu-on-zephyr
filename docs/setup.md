@@ -2,17 +2,26 @@
 
 ## Host requirements
 
-Use Linux x86_64 or AArch64 and Python **3.12+**, as required by the pinned
-Zephyr source. The reference host setup is Ubuntu 24.04. Run
+Use Linux x86_64/AArch64 or macOS on Apple Silicon, with Python **3.12+** as
+required by the pinned Zephyr source. The reference Linux setup is Ubuntu 24.04. Run
 `bash scripts/install-host-deps.sh` on a fresh machine, or `make host-deps` if
 Make is installed. This is the only step that may need sudo.
 
-The script has Ubuntu/Debian, Arch and Fedora package mappings. Older distros
-with Python below 3.12 need a newer Python or OS. macOS and Windows need a
-Linux VM or Linux environment; the orchestration uses Linux PTYs and file locks.
+The script uses apt on Ubuntu/Debian, pacman on Arch, dnf on Fedora, and
+Homebrew on macOS. Older distros with Python below 3.12 need a newer Python
+or OS. On macOS, install Xcode Command Line Tools (`xcode-select --install`)
+and [Homebrew](https://brew.sh), then follow Homebrew's instructions to add
+its executables to `PATH` before running the script. Installed Homebrew
+packages are retained; missing packages are installed.
+
+The pinned [Zephyr SDK 1.0.1](https://github.com/zephyrproject-rtos/sdk-ng/releases/tag/v1.0.1)
+provides macOS binaries for Apple Silicon. Intel Macs and Windows require a
+supported Linux environment for this workspace. POSIX terminals and file
+locks are used on both supported operating systems.
 
 Host packages provide Git, Make, Python/venv, C/C++ build tools, patch, tar, xz,
 wget, file, which, CA certificates, pkg-config and GLib development headers.
+Homebrew also provides dtc, gperf and libmagic on macOS.
 CMake, Ninja and west come from the project venv. The cross-compiler and QEMU
 come from the SDK; a system QEMU package is not required.
 
@@ -44,7 +53,9 @@ west sdk install --version 1.0.1 \
     --gnu-toolchains aarch64-zephyr-elf
 ```
 
-Only AArch64 GNU is requested. Host tools supply outer QEMU. Zephyr's installer
+Only AArch64 GNU is requested. SDK host tools supply outer QEMU on both Linux
+and macOS. Linux QEMU is under `hosttools/sysroots/<arch>-pokysdk-linux/usr/bin/`;
+macOS QEMU is under `hosttools/usr/bin/`. Zephyr's installer
 can reuse a registered SDK even when an install directory is provided; setup
 stores the resulting location in `.tools/environment.json` and writes
 `.tools/env.sh` for interactive shells. The official SDK installer also
@@ -119,7 +130,8 @@ offline from the initialized upstream repositories.
 ## Troubleshooting
 
 - **Old Python or missing venv:** run the host dependency installer. Python 3.12
-  is the minimum; an older distro's `python3` may not qualify.
+  is the minimum; an older distro's `python3` may not qualify. On macOS,
+  ensure Homebrew's `bin` directory precedes `/usr/bin` in `PATH`.
 - **Missing SDK:** run `make doctor`. Fix or unset a wrong explicit SDK path;
   the wrapper does not silently ignore it.
 - **SDK download/API failure:** restore connectivity and rerun setup. SDK
@@ -135,8 +147,9 @@ offline from the initialized upstream repositories.
 - **Guest reports no shell job control:** expected for the minimal `/bin/sh`
   initramfs. Serial commands still work.
 
-Linux acceptance writes `build/linux-validation.log`; architecture tests write
-`build/twister/`. CI runs the same setup and Make targets on Ubuntu 24.04.
+Linux guest acceptance writes `build/linux-validation.log`; architecture tests
+write `build/twister/`. CI runs the same setup, environment tests, guest
+acceptance and component tests on Ubuntu 24.04 and macOS 14 Apple Silicon.
 
 Backend selection and the six supported profiles are described in
 [backends.md](backends.md). Patches are maintained as ordered
