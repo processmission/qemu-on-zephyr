@@ -173,13 +173,6 @@ def main():
         expect(r"^VALID_BUSY_BEGIN$")
         expect(r"^VALID_BUSY_END$", timeout=20)
         expect(r"~ # ")
-        el0 = max(map(int, re.findall(r"EL0=(\d+)", transcript)), default=0)
-        mmu = max(map(int, re.findall(r"MMU-on=(\d+)", transcript)), default=0)
-        if el0 == 0 or mmu == 0:
-            raise RuntimeError("Execution statistics did not prove EL0 and guest MMU use")
-        if accel == "tcg" and not re.search(r"TCG-runs=[1-9]\d*", transcript):
-            raise RuntimeError("TCG execution was not observed")
-
         send("poweroff -f")
         expect(r"reboot: Power down")
         expect(r"QEMU guest exited: 0", timeout=10)
@@ -188,13 +181,21 @@ def main():
         send("fs ls /images")
         expect(r"Image")
         expect(r"zephyr> ")
+        if any(marker in transcript for marker in ("QEMU_ACCEL_STATS", "QEMU execution:",
+                                                    "ZEPHYR_HOST_HEARTBEAT=")):
+            raise RuntimeError("Unexpected unsolicited execution or host observer output")
         send("qemu-system-aarch64 -status")
         observer, _ = expect(r"QEMU state=exited observer_ticks=(\d+) observer_max_gap_ms=(\d+)\n")
         if int(observer.group(1)) == 0 or int(observer.group(2)) >= 4000:
             raise RuntimeError("Independent Zephyr observer stalled while the guest was running")
+        execution, _ = expect(r"QEMU execution: ([^\n]+)\n")
+        el0 = max(map(int, re.findall(r"EL0=(\d+)", execution.group(1))), default=0)
+        mmu = max(map(int, re.findall(r"MMU-on=(\d+)", execution.group(1))), default=0)
+        if el0 == 0 or mmu == 0:
+            raise RuntimeError("Execution statistics did not prove EL0 and guest MMU use")
+        if accel == "tcg" and not re.search(r"TCG-runs=[1-9]\d*", execution.group(1)):
+            raise RuntimeError("TCG execution was not observed")
         expect(r"zephyr> ")
-        if "ZEPHYR_HOST_HEARTBEAT=" in transcript:
-            raise RuntimeError("Unexpected periodic host observer output")
         send(command_line)
         expect(r"QEMU already initialized; use kernel reboot cold before another guest")
         expect(r"zephyr> ")

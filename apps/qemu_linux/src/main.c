@@ -35,6 +35,9 @@ static atomic_t qemu_busy;
 static atomic_t qemu_ready;
 static struct qemu_zephyr_options guest_options;
 static const struct shell *guest_shell;
+#ifdef CONFIG_QEMU_SYSTEM
+static char guest_stats[512];
+#endif
 
 static struct fs_mount_t image_mount = {
     .type = FS_EXT2,
@@ -64,7 +67,8 @@ static int cmd_qemu(const struct shell *shell, size_t argc, char **argv)
         return -EAGAIN;
     }
     if (argc == 2 && strcmp(argv[1], "-status") == 0) {
-        const char *state = atomic_get(&qemu_busy) ? "running" :
+        bool busy = atomic_get(&qemu_busy);
+        const char *state = busy ? "running" :
                             qemu_zephyr_started() ? "exited" : "idle";
 
 #ifdef CONFIG_QEMU_HOST_HEARTBEAT
@@ -73,6 +77,11 @@ static int cmd_qemu(const struct shell *shell, size_t argc, char **argv)
                     (unsigned long)atomic_get(&observer_max_gap));
 #else
         shell_print(shell, "QEMU state=%s", state);
+#endif
+#ifdef CONFIG_QEMU_SYSTEM
+        if (!busy && guest_stats[0] != '\0') {
+            shell_print(shell, "QEMU execution: %s", guest_stats);
+        }
 #endif
         return 0;
     }
@@ -152,6 +161,11 @@ static void *qemu_worker(void *unused)
 
         k_sem_take(&qemu_request, K_FOREVER);
         result = qemu_zephyr_run(&guest_options);
+#ifdef CONFIG_QEMU_SYSTEM
+        if (result == 0) {
+            qemu_zephyr_get_stats(guest_stats, sizeof(guest_stats));
+        }
+#endif
 #ifdef CONFIG_QEMU_HOST_HEARTBEAT
         observer_record_gap();
 #endif

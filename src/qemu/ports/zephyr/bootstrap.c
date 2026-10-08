@@ -63,6 +63,25 @@ int qemu_zephyr_mount_payload(void)
 #endif
 }
 
+void qemu_zephyr_get_stats(char *buffer, size_t capacity)
+{
+    const AccelOpsClass *ops = cpus_get_accel();
+    GString *stats;
+
+    assert(bql_locked());
+    if (capacity == 0) {
+        return;
+    }
+    buffer[0] = '\0';
+    if (first_cpu == NULL || ops == NULL || ops->get_vcpu_stats == NULL) {
+        return;
+    }
+    stats = g_string_new(NULL);
+    ops->get_vcpu_stats(first_cpu, stats);
+    pstrcpy(buffer, capacity, stats->str);
+    g_string_free(stats, true);
+}
+
 static int run_guest(const struct qemu_zephyr_options *options)
 {
     AccelClass *accel_class;
@@ -70,9 +89,6 @@ static int run_guest(const struct qemu_zephyr_options *options)
     MachineState *machine;
     int result;
     int exit_status = 0;
-#ifdef CONFIG_QEMU_HOST_HEARTBEAT
-    int64_t next_stats = 5 * NANOSECONDS_PER_SECOND;
-#endif
 
     if (qemu_zephyr_started()) {
         return -EALREADY;
@@ -159,16 +175,6 @@ static int run_guest(const struct qemu_zephyr_options *options)
         qemu_zephyr_console_poll();
         qemu_clock_run_all_timers();
         qemu_zephyr_quiesce();
-#ifdef CONFIG_QEMU_HOST_HEARTBEAT
-        if (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) >= next_stats) {
-            GString *stats = g_string_new(NULL);
-
-            cpus_get_accel()->get_vcpu_stats(first_cpu, stats);
-            printf("QEMU_ACCEL_STATS %s\n", stats->str);
-            g_string_free(stats, true);
-            next_stats += 5 * NANOSECONDS_PER_SECOND;
-        }
-#endif
         result = qemu_zephyr_cpu_exec(first_cpu);
         if (result < 0) {
             qemu_zephyr_cpu_stop();

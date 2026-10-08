@@ -4,6 +4,10 @@ The application starts a POSIX worker with a statically allocated 128 KiB stack.
 The `qemu-system-aarch64` shell command validates and copies guest options,
 then wakes the worker to call `qemu_zephyr_run()`. An independent higher-priority Zephyr
 thread maintains scheduling counters queried through `qemu-system-aarch64 -status`.
+After guest execution stops, the QEMU owner copies accelerator counters into
+the application's status snapshot. The shell reads that snapshot through
+`-status`; execution counters and host scheduling counters produce no periodic
+console output.
 
 ## QEMU model and event loop
 

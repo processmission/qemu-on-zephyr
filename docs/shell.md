@@ -45,7 +45,7 @@ QEMU loader failures return an error status to the shell worker.
 | `-smp 1` | The machine's single vCPU |
 | `-nographic` | Use the existing serial console |
 | `-help` | Show command help; `-M help`, `-accel help`, `-cpu help` list selections |
-| `-status` | Query guest state and independent host scheduling counters |
+| `-status` | Query guest state, completed execution counters and host scheduling counters |
 
 Use absolute Zephyr filesystem paths. `-kernel` and `-bios` are mutually
 exclusive. `-initrd` and `-append` apply to `-kernel`. Unsupported options,
@@ -54,6 +54,10 @@ initialization. Firmware runs at guest EL1 on the `zephyr-virt` memory map:
 RAM starts at `0x40000000`, PL011 is at `0x09000000`, and the interrupt
 controller is a software GICv3. ELF segments and the entry point are handled
 by QEMU's ELF loader. Raw firmware must be linked for its load address.
+
+Execution and host scheduling counters are printed only by `-status`.
+After the guest exits or Ctrl-] returns to Zephyr, the command reports
+the completed execution's accelerator counters.
 
 Build the TCG host from the development machine with:
 

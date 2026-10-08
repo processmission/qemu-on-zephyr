@@ -35,5 +35,9 @@ bool qemu_zephyr_started(void);
 void qemu_zephyr_request_stop(void);
 void qemu_zephyr_console_input(const unsigned char *data, size_t length);
 int qemu_zephyr_mount_payload(void);
+#ifdef CONFIG_QEMU_SYSTEM
+/* Copy counters on the QEMU owner after guest execution has stopped. */
+void qemu_zephyr_get_stats(char *buffer, size_t capacity);
+#endif
 
 #endif
