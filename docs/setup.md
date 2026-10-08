@@ -122,7 +122,8 @@ and Git can inspect repositories initially fetched by west.
 | `make guest-disk GUEST_FILES=/path/to/images` | Create an Ext2 disk from a directory of images and firmware |
 | `make run GUEST_DISK=/path/to/disk.img` | Attach an existing image disk read-only to Zephyr |
 | `make run QEMU_SHELL=1` | Wait for a manual QEMU command at the Zephyr prompt |
-| `make run QEMU_MODE=user QEMU_SHELL=1` | Build the `qemu-aarch64` Linux process shell command |
+| `make run QEMU_MODE=user QEMU_SHELL=1` | Start the `qemu-aarch64` shell with SDK-built `/images/hello` |
+| `make guest-disk QEMU_MODE=user` | Prepare `build/user-disk.img` with the default Linux ABI sample |
 | `JOBS=16 make build` | Set parallel build jobs |
 | `BOOTSTRAP_PYTHON=python3.12 make setup` | Choose the Python used to create the venv |
 | `make update` | Synchronize sources to the manifest |

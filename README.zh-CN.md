@@ -111,7 +111,7 @@ make doctor
 | 参数 | 含义 |
 | :--- | :--- |
 | `QEMU_MODE=system` | 默认模式，编译 `qemu-system-aarch64` shell 命令 |
-| `QEMU_MODE=user` | 编译用于执行 Linux 程序的 `qemu-aarch64` shell 命令 |
+| `QEMU_MODE=user` | 编译 `qemu-aarch64`，默认磁盘提供 `/images/hello` |
 | `QEMU_SHELL=0` | 默认自动启动，Zephyr 启动并挂载文件系统后执行配置的命令 |
 | `QEMU_SHELL=1` | 进入 Zephyr shell，等待手动输入命令 |
 | `QEMU_ARGS='…'` | system 支持 `-M`/`-machine`、`-accel`、`-cpu`；user 支持 `-cpu`、`-E`、`-strace`、程序路径和参数 |
@@ -135,10 +135,16 @@ system 的后端在编译时选择，shell 中的 `-accel` 必须与固件一致
 
 ## 镜像文件
 
-`make run` 默认根据已经验证的 Linux 下载文件创建 `build/guest-disk.img`。
-外层 QEMU 通过 VirtIO Block 提供磁盘，Zephyr 将 Ext2 文件系统只读挂载到
-`/images`，其中包含 `Image` 和 `initramfs.cpio.gz`。`make host-deps` 会在
-Linux 或 macOS 上安装 e2fsprogs，构建工具会查找其 `mke2fs`。
+`make run` 根据所选模式准备默认磁盘。外层 QEMU 通过 VirtIO Block 提供磁盘，
+Zephyr 将 Ext2 文件系统只读挂载到 `/images`。
+
+| 模式 | 开发机上的默认磁盘 | `/images` 中的文件 |
+| :--- | :--- | :--- |
+| `system` | `build/guest-disk.img` | 已验证的 `Image` 和 `initramfs.cpio.gz` |
+| `user` | `build/user-disk.img` | 使用 SDK 编译的静态 Linux AArch64 `hello` |
+
+`make host-deps` 会在 Linux 或 macOS 上安装 e2fsprogs，构建工具会查找
+其 `mke2fs`。
 
 将自己的 Linux 镜像、固件或用户程序放入开发机目录，再创建并挂载磁盘：
 
@@ -149,7 +155,7 @@ make run QEMU_SHELL=1 GUEST_DISK="$PWD/build/custom.img"
 
 进入 Zephyr 后，使用 `fs ls /images` 查看文件。开发机上的
 `/absolute/path/to/images/firmware.elf` 对应 Zephyr 中的 `/images/firmware.elf`。
-`make run GUEST_FILES=…` 会根据该目录创建或更新默认磁盘。
+`make run GUEST_FILES=…` 会根据该目录创建或更新所选模式的默认磁盘。
 `make run GUEST_DISK=…` 会挂载已经存在的磁盘；修改源文件后，使用
 `make guest-disk` 重新生成这个磁盘。源目录可以包含普通文件和子目录，
 磁盘输出文件需要放在 `GUEST_FILES` 目录之外，工具会拒绝符号链接。
@@ -218,20 +224,38 @@ qemu-system-aarch64 -kernel /images/Image -initrd /images/initramfs.cpio.gz
 
 ## Linux user 模式
 
-将静态链接的 Linux AArch64 可执行文件放入开发机目录，选择 user 固件：
+使用默认示例启动 user 固件：
+
+```sh
+make run QEMU_MODE=user QEMU_SHELL=1
+```
+
+启动工具会使用已经安装的 Zephyr SDK 编译 [hello 示例](samples/linux-user/hello/)，
+并将其放入 `build/user-disk.img`。开发机上的可执行文件是
+`build/user-programs/hello`，它是使用 Linux AArch64 syscall ABI 的静态 ELF。
+程序会打印命令行参数和可选的 `MESSAGE` 环境变量。在 Zephyr 提示符下执行：
+
+```text
+fs ls /images
+qemu-aarch64 -help
+qemu-aarch64 /images/hello arg1
+qemu-aarch64 -cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"
+qemu-aarch64 -strace /images/hello
+```
+
+仅准备默认磁盘时，可以执行 `make guest-disk QEMU_MODE=user`。
+已经运行的 QEMU 会继续使用启动时挂载的磁盘；需要挂载新生成的磁盘时，
+按 Ctrl-a 再按 x 退出外层 QEMU，然后重新运行 Make 命令。
+
+使用自己的静态 Linux AArch64 程序时，指定开发机目录：
 
 ```sh
 make run QEMU_MODE=user QEMU_SHELL=1 GUEST_FILES=/absolute/path/to/programs
 ```
 
-在 Zephyr 提示符下，从文件系统启动程序：
-
-```text
-fs ls /images
-qemu-aarch64 -help
-qemu-aarch64 -cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"
-qemu-aarch64 -strace /images/hello
-```
+磁盘内容由这个目录提供。名为 `my-program` 的文件会出现在
+`/images/my-program`，可以通过 `fs ls /images` 核对文件名。
+指定 `GUEST_DISK=/absolute/path/disk.img` 时，直接挂载提供的现有磁盘。
 
 命令支持与固件一致的 `-cpu`、用于查看 syscall 的 `-strace`，以及最多八个
 `-E NAME=VALUE` 环境变量设置。程序路径之后的参数交给程序处理，包含空格时
@@ -240,7 +264,7 @@ qemu-aarch64 -strace /images/hello
 需要自动启动时，通过 Make 提供程序路径和参数：
 
 ```sh
-make run QEMU_MODE=user QEMU_ARGS='-cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"' GUEST_FILES=/absolute/path/to/programs
+make run QEMU_MODE=user QEMU_ARGS='-cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"'
 ```
 
 user 模式复用 QEMU 的 user TCG 和 Linux ELF loader。程序执行 Linux `svc`
@@ -280,8 +304,9 @@ make check-user QEMU_ARGS='-cpu cortex-a72'
 
 `make check` 验证自动启动，`QEMU_SHELL=1` 验证手动启动。
 `make check-firmware` 验证 ELF 和原始固件、加载错误、Ctrl-] 终止，以及重启
-Zephyr 后再次启动。`make check-user` 自动选择 user 固件和手动启动配置，
-验证参数、环境变量、文件 I/O、内存、错误访问、随机数据和连续启动。
+Zephyr 后再次启动。`make check-user` 自动选择 user 固件，先验证默认
+`make run` 提供 `/images/hello`，再检查参数、环境变量、文件 I/O、内存、
+错误访问、随机数据和连续启动。
 
 ## 架构
 
@@ -330,6 +355,7 @@ syscall 适配层，源码由 `zephyr/user.cmake` 选择。
 | `patches/` | 按功能拆分的补丁，由 `series` 明确应用顺序 |
 | `zephyr/` | module 元数据、Kconfig、CMake |
 | `apps/`、`tests/` | QEMU shell 应用、固件、Linux 用户程序和回归测试 |
+| `samples/linux-user/hello/` | 默认 user 磁盘中的 Linux ABI 示例程序 |
 | `scripts/` | 开发环境、源码准备、Ext2 镜像、构建和启动配置 |
 | `build/sources/` | 自动生成的源码树，不作为编辑入口 |
 

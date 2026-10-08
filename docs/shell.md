@@ -77,11 +77,14 @@ and CPU defaults; the shell command selects image paths and runtime options.
 
 ## Preparing image files
 
-The default disk is `build/guest-disk.img`. `make run` and `make check` create
+The default system disk is `build/guest-disk.img`. `make run` and `make check` create
 it from the verified downloads, exposing `Image` and `initramfs.cpio.gz`.
 The host uses e2fsprogs `mke2fs`; `make host-deps` installs that dependency on
 Linux and macOS. Source changes regenerate the disk through a temporary file
 and atomic rename.
+
+With `QEMU_MODE=user`, the default disk is `build/user-disk.img`, containing
+the SDK-built `/images/hello` example. See [Linux user mode](user-mode.md).
 
 To populate a disk from your own directory:
 

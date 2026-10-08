@@ -125,7 +125,7 @@ parameters configure QEMU inside Zephyr:
 | Parameter | Meaning |
 | :--- | :--- |
 | `QEMU_MODE=system` | Default; build the `qemu-system-aarch64` shell command |
-| `QEMU_MODE=user` | Build the `qemu-aarch64` shell command for Linux programs |
+| `QEMU_MODE=user` | Build `qemu-aarch64`; the default disk provides `/images/hello` |
 | `QEMU_SHELL=0` | Default; execute the configured command after boot and filesystem mounting |
 | `QEMU_SHELL=1` | Enter the Zephyr shell and wait for a command |
 | `QEMU_ARGS='…'` | System: `-M`/`-machine`, `-accel`, `-cpu`; user: `-cpu`, `-E`, `-strace`, program path and arguments |
@@ -150,10 +150,15 @@ TCG, and its shell `-cpu` must match the compiled model. `QEMU_MODE` and
 
 ## Image files
 
-`make run` prepares `build/guest-disk.img` from the verified Linux downloads
-by default. Outer QEMU provides a VirtIO Block disk; Zephyr mounts its Ext2
-filesystem read-only at `/images`, containing `Image` and
-`initramfs.cpio.gz`. `make host-deps` installs e2fsprogs on Linux or macOS,
+`make run` prepares a disk for the selected mode. Outer QEMU provides a
+VirtIO Block disk; Zephyr mounts its Ext2 filesystem read-only at `/images`.
+
+| Mode | Default host disk | Files under `/images` |
+| :--- | :--- | :--- |
+| `system` | `build/guest-disk.img` | Verified `Image` and `initramfs.cpio.gz` downloads |
+| `user` | `build/user-disk.img` | Static Linux AArch64 `hello`, compiled with the SDK |
+
+`make host-deps` installs e2fsprogs on Linux or macOS,
 and the build tools locate its `mke2fs` executable.
 
 To use your own Linux images, firmware or user programs, place regular files
@@ -166,7 +171,7 @@ make run QEMU_SHELL=1 GUEST_DISK="$PWD/build/custom.img"
 
 At the Zephyr prompt, `fs ls /images` lists its contents. A host file
 `/absolute/path/to/images/firmware.elf` becomes `/images/firmware.elf`.
-`GUEST_FILES` with `make run` also creates or updates the default disk;
+`GUEST_FILES` with `make run` creates or updates the selected mode's default disk;
 an explicit `GUEST_DISK` on `make run` attaches that existing file. Use
 `make guest-disk` to regenerate an explicitly named disk after changing its
 source files. Keep the output disk outside `GUEST_FILES`; symbolic links
@@ -239,21 +244,40 @@ are printed only when you enter `qemu-system-aarch64 -status`.
 
 ## Linux user mode
 
-Place statically linked Linux AArch64 executables in a host directory and
-select the separate user firmware:
+Start the user firmware with its default example:
+
+```sh
+make run QEMU_MODE=user QEMU_SHELL=1
+```
+
+The runner compiles [the hello sample](samples/linux-user/hello/) with the
+installed Zephyr SDK and puts it on `build/user-disk.img`. Its host executable
+is `build/user-programs/hello`, a static ELF using the Linux AArch64 syscall ABI.
+The program prints its arguments and the optional `MESSAGE` environment value.
+At the Zephyr prompt:
+
+```text
+fs ls /images
+qemu-aarch64 -help
+qemu-aarch64 /images/hello arg1
+qemu-aarch64 -cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"
+qemu-aarch64 -strace /images/hello
+```
+
+To prepare this default disk without starting QEMU, run
+`make guest-disk QEMU_MODE=user`. Existing firmware sessions keep their
+attached disk; use Ctrl-a followed by x and run Make again to attach a newly
+prepared disk.
+
+For your own static Linux AArch64 programs, supply their host directory:
 
 ```sh
 make run QEMU_MODE=user QEMU_SHELL=1 GUEST_FILES=/absolute/path/to/programs
 ```
 
-At the Zephyr prompt, load a program from the mounted filesystem:
-
-```text
-fs ls /images
-qemu-aarch64 -help
-qemu-aarch64 -cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"
-qemu-aarch64 -strace /images/hello
-```
+That directory supplies the disk's contents. A file named `my-program` is
+available as `/images/my-program`; use `fs ls /images` to inspect the actual
+names. `GUEST_DISK=/absolute/path/disk.img` attaches an existing disk as supplied.
 
 The command accepts the compiled `-cpu` model, `-strace` for syscall tracing,
 and up to eight `-E NAME=VALUE` settings. Arguments after the program path
@@ -263,7 +287,7 @@ working directory is `/images`.
 For automatic execution, supply the program and arguments through Make:
 
 ```sh
-make run QEMU_MODE=user QEMU_ARGS='-cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"' GUEST_FILES=/absolute/path/to/programs
+make run QEMU_MODE=user QEMU_ARGS='-cpu cortex-a53 -E MESSAGE=hello /images/hello "an argument"'
 ```
 
 User mode executes the program through upstream QEMU user TCG and its Linux
@@ -320,7 +344,8 @@ make check-user QEMU_ARGS='-cpu cortex-a72'
 
 `make check-firmware` validates ELF/raw firmware, loader errors, Ctrl-] and
 reboot followed by another launch. `make check-user` selects user firmware
-and manual startup, then checks program arguments, environment, file I/O,
+and verifies that the default `make run` provides `/images/hello`. It then
+checks program arguments, environment, file I/O,
 memory operations, faults, entropy and successive launches.
 
 ## Architecture
@@ -395,6 +420,7 @@ More: [implementation map](docs/architecture.md) · [executor API](src/zephyr/in
 | `patches/`, `src/` | Ordered upstream patches and new QEMU/Zephyr implementation files |
 | `zephyr/` | Module metadata, Kconfig and system/user source lists |
 | `apps/` | QEMU shell application and standalone PL011 example |
+| `samples/linux-user/hello/` | Linux ABI hello program compiled for the default user disk |
 | `scripts/` | Host setup, source preparation, Ext2 disks, builds and launch configuration |
 | `tests/` | Tooling, GLib, filesystems, firmware and Linux user programs |
 | `docs/` | Setup, architecture, interfaces, guest assets and validation |

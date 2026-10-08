@@ -3,18 +3,32 @@
 Build the user emulation firmware and wait at the Zephyr shell:
 
 ```sh
-make run QEMU_MODE=user QEMU_SHELL=1 GUEST_FILES=/absolute/path/to/programs
+make run QEMU_MODE=user QEMU_SHELL=1
 ```
 
-Place a statically linked AArch64 Linux ELF executable in that directory.
-The mounted filesystem exposes it under `/images`. For example:
+The runner builds [the hello sample](../samples/linux-user/hello/) with the
+installed SDK. Its static Linux AArch64 executable is saved as
+`build/user-programs/hello` and placed on the default `build/user-disk.img`.
+The disk mounts at `/images`; the program prints arguments and `MESSAGE`
+when that environment variable is supplied:
 
 ```text
 fs ls /images
 qemu-aarch64 -help
-qemu-aarch64 -E MESSAGE=hello /images/program "an argument"
-qemu-aarch64 -strace /images/program
+qemu-aarch64 /images/hello arg1
+qemu-aarch64 -E MESSAGE=hello /images/hello "an argument"
+qemu-aarch64 -strace /images/hello
 ```
+
+`make guest-disk QEMU_MODE=user` prepares the example disk without launching
+QEMU. To attach a newly prepared disk, exit an existing outer QEMU session
+with Ctrl-a followed by x and run Make again.
+
+For custom static Linux AArch64 executables, use
+`make run QEMU_MODE=user QEMU_SHELL=1 GUEST_FILES=/absolute/path/to/programs`.
+That directory supplies the disk's files; a file named `my-program` is
+loaded with `qemu-aarch64 /images/my-program`. An explicit `GUEST_DISK`
+attaches the supplied disk unchanged. Inspect filenames with `fs ls /images`.
 
 The command executes the ELF through QEMU's `CONFIG_USER_ONLY` ARM translator
 and AArch64 TCG backend. Linux `svc` instructions dispatch to the Zephyr
@@ -29,7 +43,7 @@ the `virt` board. User emulation runs on a Zephyr EL1 host.
 For automatic execution, provide the process path and its arguments:
 
 ```sh
-make run QEMU_MODE=user QEMU_ARGS='-cpu cortex-a53 -E MESSAGE=hello /images/program example' GUEST_FILES=/absolute/path/to/programs
+make run QEMU_MODE=user QEMU_ARGS='-cpu cortex-a53 -E MESSAGE=hello /images/hello example'
 ```
 
 `QEMU_SHELL=0` is the default. Manual mode accepts `-cpu` matching the CPU
@@ -82,7 +96,9 @@ file. Architecture and mapping validation remain in QEMU's loader.
 make check-user
 ```
 
-The SDK builds a real AArch64 Linux ABI program. Acceptance loads it from
+Acceptance first executes the documented default `make run` and checks
+`/images/hello`, its arguments, environment and syscall tracing. The SDK also
+builds an AArch64 Linux ABI regression program. Acceptance loads it from
 Ext2 and exercises arguments, environment, data/BSS, file reads, Linux errno,
 heap growth, memory mappings, self-modifying code, clocks and entropy. It
 also checks invalid addresses, write protection, unmapping, Ctrl-] and

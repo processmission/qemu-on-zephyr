@@ -19,6 +19,7 @@ import yaml
 from environment import command_env, qemu_path
 from qemu_config import QemuConfig, load_config
 from guest_disk import disk_path, prepare_disk
+from user_programs import prepare_user_programs
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
@@ -260,6 +261,14 @@ def build_directory(profile: str = "linux", *, config: QemuConfig | None = None)
     return BUILD / profile
 
 
+def prepare_guest_disk(config: QemuConfig, *, create: bool = False) -> Path:
+    source = None
+    if (config.mode == "user" and not os.environ.get("GUEST_FILES") and
+            (create or not os.environ.get("GUEST_DISK"))):
+        source = prepare_user_programs(ROOT)
+    return prepare_disk(ROOT, create=create, mode=config.mode, default_source=source)
+
+
 def qemu_command(profile: str = "linux", interactive: bool = False,
                  *, config: QemuConfig | None = None) -> list[str]:
     config = config or load_config()
@@ -282,7 +291,7 @@ def qemu_command(profile: str = "linux", interactive: bool = False,
     else:
         command += ["-serial", "stdio"]
     if profile == "linux":
-        disk = str(disk_path(ROOT)).replace(",", ",,")
+        disk = str(disk_path(ROOT, mode=config.mode)).replace(",", ",,")
         command += ["-global", "virtio-mmio.force-legacy=false",
                     "-drive", f"if=none,id=guestfiles,file={disk},format=raw,readonly=on",
                     "-device", "virtio-blk-device,bus=virtio-mmio-bus.4,drive=guestfiles"]
@@ -328,16 +337,19 @@ def main():
     elif action == "assets":
         assets()
     elif action == "guest-disk":
-        if not os.environ.get("GUEST_FILES"):
+        config = load_config()
+        if config.mode == "system" and not os.environ.get("GUEST_FILES"):
             assets()
-        prepare_disk(ROOT, create=True)
+        prepare_guest_disk(config, create=True)
     elif action in ("build", "run", "native-probe"):
+        config = load_config()
         profile = "native-probe" if action == "native-probe" else "linux"
-        build(profile)
+        build(profile, config=config)
         if action != "build":
             if profile == "linux":
-                prepare_disk(ROOT)
-            os.execvp(qemu_command(profile, True)[0], qemu_command(profile, True))
+                prepare_guest_disk(config)
+            command = qemu_command(profile, True, config=config)
+            os.execvp(command[0], command)
     elif action in ("probe", "test-payload"):
         regression("probe" if action == "probe" else "payload")
     elif action == "check":
@@ -359,6 +371,7 @@ def main():
         build(config=config)
         env = command_env()
         env.update(QEMU_MODE="user", QEMU_SHELL="1", ACCEL="tcg")
+        run(sys.executable, "tests/user/check_default.py", env=env)
         run(sys.executable, "tests/user/check.py", env=env)
     elif action == "test-arch":
         prepare()

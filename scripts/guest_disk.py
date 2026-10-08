@@ -24,12 +24,14 @@ def mke2fs_path() -> str:
     raise RuntimeError("mke2fs is missing; install e2fsprogs with make host-deps")
 
 
-def disk_path(root: Path) -> Path:
-    return Path(os.environ.get("GUEST_DISK") or root / "build/guest-disk.img").expanduser().resolve()
+def disk_path(root: Path, *, mode: str = "system") -> Path:
+    name = {"system": "guest-disk.img", "user": "user-disk.img"}[mode]
+    return Path(os.environ.get("GUEST_DISK") or root / "build" / name).expanduser().resolve()
 
 
-def prepare_disk(root: Path, *, create: bool = False) -> Path:
-    destination = disk_path(root)
+def prepare_disk(root: Path, *, create: bool = False, mode: str = "system",
+                 default_source: Path | None = None) -> Path:
+    destination = disk_path(root, mode=mode)
     if os.environ.get("GUEST_DISK") and not create:
         if not destination.is_file():
             raise RuntimeError(f"Missing GUEST_DISK: {destination}; run make guest-disk")
@@ -39,12 +41,14 @@ def prepare_disk(root: Path, *, create: bool = False) -> Path:
     with (build / ".guest-disk.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         with tempfile.TemporaryDirectory(prefix="guest-files-", dir=build) as directory:
-            source = Path(os.environ.get("GUEST_FILES") or directory).expanduser().resolve()
+            source = Path(os.environ.get("GUEST_FILES") or default_source or directory).expanduser().resolve()
             if not source.is_dir():
                 raise RuntimeError(f"GUEST_FILES must be a directory: {source}")
             if source == destination or source in destination.parents:
                 raise RuntimeError("GUEST_DISK must be outside GUEST_FILES")
-            if not os.environ.get("GUEST_FILES"):
+            if not os.environ.get("GUEST_FILES") and default_source is None:
+                if mode == "user":
+                    raise RuntimeError("User mode requires a program directory for disk creation")
                 shutil.copyfile(root / "downloads/tuxrun-arm64-Image", source / "Image")
                 shutil.copyfile(root / "downloads/generic-arm64-rootfs.cpio.gz",
                                 source / "initramfs.cpio.gz")

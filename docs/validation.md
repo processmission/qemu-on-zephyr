@@ -205,3 +205,16 @@ with virtual process IDs 1 and 2.
 The QOM/PL011 probe, 196 filesystem checks, GLib differential checks and
 28 tooling tests passed. Runtime logs are in `.user-runtime/` and the
 individual build directories; generated files are excluded from Git.
+
+## Default user program
+
+The documented `make run QEMU_MODE=user QEMU_SHELL=1` prepares a static
+Linux AArch64 `hello` from the installed SDK and mounts it from
+`build/user-disk.img`. Default-launch acceptance executed the program with
+arguments, an environment value and syscall tracing, followed by a clean
+Ctrl-a x exit. Automatic startup with a quoted argument also passed.
+
+The same generated ELF executed directly in Ubuntu 24.04 AArch64. Disk
+checks verified its ELF architecture, static linkage, cache reuse, Ext2
+contents and explicit source/disk overrides. User syscall acceptance,
+system Linux boot and the device, filesystem and GLib regressions passed.
