@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Patch-series completeness, ordering and path validation."""
 from pathlib import Path
+from email import policy
+from email.parser import Parser
 import sys
+import subprocess
 import tempfile
 import unittest
 
@@ -35,6 +38,10 @@ class PatchSeriesTests(unittest.TestCase):
             patches = patch_series(root / "patches" / project)
             self.assertGreater(len(patches), 1)
             for path in patches:
-                header = path.read_text().split("\n---\n", 1)[0]
-                self.assertIn("Subject: [PATCH] ", header)
-                self.assertIn("Signed-off-by: Chao Liu <chao.liu.zevorn@gmail.com>", header)
+                message = Parser(policy=policy.default).parsestr(path.read_text())
+                self.assertTrue(str(message["Subject"]).startswith("[PATCH] "))
+                trailers = subprocess.check_output(
+                    ["git", "interpret-trailers", "--parse"],
+                    input=str(message["Subject"]) + "\n\n" + message.get_payload(), text=True,
+                ).splitlines()
+                self.assertIn(f"Signed-off-by: {message['From']}", trailers)

@@ -1,0 +1,29 @@
+From 57b0c3bd9d96c9ccc07352caeacdba0e62ededff Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu@processmission.com>
+Date: Thu, 8 Oct 2026 16:38:16 +0800
+Subject: [PATCH] fs: ext2: preserve read-only inode synchronization
+
+Synchronize inode buffers only on writable mounts. Read-only file
+close and sync operations complete without writing cached blocks
+back to the storage device.
+
+Signed-off-by: Chao Liu <chao.liu@processmission.com>
+---
+ subsys/fs/ext2/ext2_impl.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/subsys/fs/ext2/ext2_impl.c b/subsys/fs/ext2/ext2_impl.c
+index c3796a078..daa9f567a 100644
+--- a/subsys/fs/ext2/ext2_impl.c
++++ b/subsys/fs/ext2/ext2_impl.c
+@@ -857,6 +857,10 @@ int ext2_inode_sync(struct ext2_inode *inode)
+ 	int ret;
+ 	struct ext2_data *fs = inode->i_fs;
+ 
++	if ((fs->flags & EXT2_DATA_FLAGS_RO) != 0U) {
++		return 0;
++	}
++
+ 	for (int i = 0; i < 4; ++i) {
+ 		if (inode->blocks[i] == NULL) {
+ 			break;

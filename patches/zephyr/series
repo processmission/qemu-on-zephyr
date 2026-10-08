@@ -4,3 +4,4 @@
 0004-arch-arm64-use-the-hypervisor-timer-for-el2-hosts.patch
 0005-arch-arm64-preserve-lazy-fpu-ownership-at-el2.patch
 0006-arch-arm64-integrate-the-native-guest-executor.patch
+0007-fs-ext2-preserve-read-only-inode-synchronization.patch
