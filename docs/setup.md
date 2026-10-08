@@ -71,10 +71,11 @@ make run
 Use `make run` for the profile's outer QEMU memory and console configuration;
 the board's generic `west build -t run` target does not necessarily use them.
 
-For explicit initialization, setup performs:
+For explicit initialization, run from the repository root:
 
 ```sh
-.venv/bin/west init -l west
+qoz_workspace="$PWD"
+(cd / && env -u ZEPHYR_BASE "$qoz_workspace/.venv/bin/west" init -l "$qoz_workspace/west")
 .venv/bin/west config --local manifest.path .
 .venv/bin/west config --local manifest.file west/west.yml
 .venv/bin/west config --local update.narrow true
@@ -82,8 +83,9 @@ For explicit initialization, setup performs:
 git submodule init
 ```
 
-The first command targets the **`west/` subdirectory** deliberately. Running
-`west init -l .` instead would create `.west` in the repository's parent.
+The first command targets the **`west/` subdirectory** deliberately. Setup
+runs initialization from the filesystem root with an absolute manifest path
+and a cleared `ZEPHYR_BASE`, so an existing ancestor workspace is preserved.
 Configuration then makes the repository root the manifest repository and module.
 No manifest import pulls in Zephyr's full dependency graph.
 Narrow, depth-one fetches avoid downloading unrelated upstream branches and tags.

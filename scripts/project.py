@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Prepare pristine upstream sources plus local overlays, build and run."""
 
 import argparse
 import configparser
@@ -39,7 +37,8 @@ ASSETS = {
 
 
 def run(*command, **kwargs):
-    return subprocess.run(command, cwd=ROOT, check=True, **kwargs)
+    kwargs.setdefault("cwd", ROOT)
+    return subprocess.run(command, check=True, **kwargs)
 
 
 def require_clean_upstream(repo):
@@ -52,7 +51,10 @@ def initialize():
     env = command_env(require_sdk=False)
     west = [sys.executable, "-m", "west"]
     if not (ROOT / ".west/config").exists():
-        run(*west, "init", "-l", "west", env=env)
+        init_env = env.copy()
+        init_env.pop("ZEPHYR_BASE", None)
+        # Start outside ancestor workspaces; the absolute manifest selects ROOT.
+        run(*west, "init", "-l", str(ROOT / "west"), cwd=ROOT.anchor, env=init_env)
     else:
         path = run(*west, "config", "--local", "manifest.path", env=env,
                    capture_output=True, text=True).stdout.strip()
@@ -276,7 +278,7 @@ def regression(profile):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Prepare sources, build and run QEMU on Zephyr.")
     parser.add_argument("action", choices=("init", "prepare", "assets", "build", "run", "check",
                                          "probe", "native-probe", "test-payload", "test-arch", "clean"))
     action = parser.parse_args().action
