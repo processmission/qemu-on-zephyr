@@ -140,7 +140,7 @@ It also identifies additional library, build, storage, and kernel support.
 Sections~\ref{sec:porting} and~\ref{sec:assessment} give the implementations
 and observations.
 
-GLib supplies library behavior outside POSIX. User programs issue Linux
+The GLib subset supplies library behavior outside POSIX. User programs issue Linux
 AArch64 syscall numbers, while Zephyr generates its kernel syscall identifiers
 at build time~\cite{zephyr-implementation}. The guest ABI adapter in
 \source{src/qemu/ports/zephyr/user-syscall.c} has separate results.
@@ -187,9 +187,9 @@ behavior; host mprotect remains unavailable.\\
 Threads and lifetime & One QEMU owner; BQL tracking; deferred RCU callbacks;
 timer exits; worker-local exit target & Pthread APIs supply threads and locks;
 the port defines ownership, event handling, and guest lifetime.\\
-Libraries and build & GLib subset; libfdt/zlib integration; CMake source
-selection and upstream generators & Dependency and build support outside
-the POSIX interface count.\\
+Libraries and build & GLib subset; unchanged libfdt/zlib sources; Picolibc;
+CMake source selection and upstream generators & Library-specific treatment
+in Table~\ref{tab:c-libraries}; dependency support outside the POSIX count.\\
 Storage and commands & VirtIO disk attachment; Ext2 mount; UART shell
 commands and argument ownership & Application integration for image loading,
 manual launch, and return to the shell.\\
@@ -220,11 +220,71 @@ GICv3, and ARM loaders. The probe in \source{apps/qemu_probe/} constructs QOM
 objects and reads and writes PL011 registers.
 \source{src/qemu/ports/zephyr/machine.c} defines the guest machine.
 
-The GLib subset supplies the containers and utilities that these sources
-use. Differential tests compare its output with host GLib output for the
-same inputs. The cases include allocation overflow. The implementation is in
-\source{src/qemu/ports/zephyr/glib/}; the tests are in \source{tests/glib/}.
-Their results apply to the exercised library behavior.
+\subsection{Third-party C libraries}
+\label{sec:c-libraries}
+
+Table~\ref{tab:c-libraries} records libraries selected for QEMU inside Zephyr.
+The counts exclude development-host tools and the host GLib used for
+differential tests. They distinguish a local API implementation, upstream
+source reuse, build configuration, and C-runtime selection.
+
+\begin{table*}[t]
+\caption{C-library integration. Unit counts refer to selected QEMU-side C
+files for system/user mode. Shared port bridges and toolchain sources are
+outside those counts.}
+\label{tab:c-libraries}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.15\textwidth}c>{\raggedright\arraybackslash}p{0.20\textwidth}Y@{}}
+\toprule
+Library & Units & Source treatment & Integration and POSIX relevance\\
+\midrule
+GLib API subset & 1 / 1 & Project implementation &
+Containers, strings, allocation, and utilities in glib.c. Shared os.c and
+file.c supply initialization, time, file, and mapped-file interfaces.\\
+libfdt & 8 / 0 & Unchanged C/header sources; zero library patches &
+DTB operations on memory buffers. Existing C memory/string services satisfy
+the selected calls; the project adds no libfdt POSIX bridge.\\
+zlib & 6 / 2 & Unchanged C/header sources; zero library patches &
+Z\_SOLO excludes gzip file I/O and default allocators. System mode selects
+inflate and checksum sources; user mode selects Adler-32 and CRC-32 sources.\\
+Picolibc & SDK & Toolchain runtime selection &
+Zephyr selects the SDK C library. The project maintains no Picolibc patch
+series; Zephyr supplies the OS-facing POSIX services.\\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+The GLib subset implements the APIs required by the selected QEMU sources.
+Its core is \source{src/qemu/ports/zephyr/glib/glib.c}.
+\source{src/qemu/ports/zephyr/file.c} supplies file and mapped-file interfaces.
+\source{src/qemu/ports/zephyr/os.c} supplies initialization and time interfaces.
+The shared files also contain QEMU adapters, so their full contents cannot
+be counted as GLib-specific changes.
+Tests in \source{tests/glib/} compare output with host GLib for the same
+inputs, including allocation overflow.
+
+The build selects eight upstream libfdt files for system mode. They operate
+on DTB buffers with the existing C-library memory and string routines.
+The selected sources require no added file, thread, or process wrappers.
+
+The zlib build defines \code{Z\_SOLO}. QEMU's upstream image loader already
+supplies \code{zalloc}/\code{zfree} callbacks through \code{g\_malloc}/\code{g\_free}.
+The port reuses those callbacks with its GLib subset.
+This is configuration and allocator integration; the zlib source remains
+unchanged.
+
+Picolibc comes from the selected SDK. TCG profiles compile QEMU's in-tree
+SoftFloat and AES/SM4 helpers. The current profile omits optional
+libraries such as Pixman, libslirp, GnuTLS/nettle, and SDL.
+Their absence records a feature choice and supplies no library-portability
+result.
+
+\source{west/west.yml} fixes the library revisions.
+\source{zephyr/CMakeLists.txt} and \source{zephyr/user.cmake} select the
+source units. The inventory in \source{docs/data/c-dependencies.json}
+records compiler source lists, configuration hashes, and upstream source
+comparisons. Library integration counts remain separate from POSIX API
+counts.
 
 \subsection{Use one owner thread}
 
@@ -821,6 +881,11 @@ inventories and Matplotlib plots with \source{docs/requirements-figures.txt}.
 The flow source is \source{docs/figures/posix-porting-flow.mmd}. This manuscript
 contains the vector graphics and chart values. Figure preparation uses the
 Scientific Visualization workflow~\cite{scientific-skills}.
+
+\source{scripts/dependency_inventory.py} reads system and user compilation
+databases and verifies the prepared library sources. It regenerates the
+C-library inventory with source lists, configuration hashes, and integration
+categories.
 
 \begin{thebibliography}{16}
 \small

@@ -1,0 +1,203 @@
+{
+  "scope": "C libraries selected for QEMU inside Zephyr; development-host tools are outside the count",
+  "implementation_revision": "2b1161806afe14fe57dec97234f37aac1ea84e5e",
+  "profiles": {
+    "system": {
+      "build_directory": "build/linux",
+      "compile_database_sha256": "8a42f2aa841767a62178d8800db6da4852d29f025c10dec4e3c13bf7858b67f6",
+      "config_sha256": "f75b0cc65c8f350e4bc0e2360adf557a7af8dc73470fb532dc32053cd776935c",
+      "source_files": {
+        "GLib API subset": [
+          "ports/zephyr/glib/glib.c"
+        ],
+        "libfdt": [
+          "subprojects/dtc/libfdt/fdt.c",
+          "subprojects/dtc/libfdt/fdt_addresses.c",
+          "subprojects/dtc/libfdt/fdt_empty_tree.c",
+          "subprojects/dtc/libfdt/fdt_ro.c",
+          "subprojects/dtc/libfdt/fdt_rw.c",
+          "subprojects/dtc/libfdt/fdt_strerror.c",
+          "subprojects/dtc/libfdt/fdt_sw.c",
+          "subprojects/dtc/libfdt/fdt_wip.c"
+        ],
+        "zlib": [
+          "subprojects/zlib/adler32.c",
+          "subprojects/zlib/crc32.c",
+          "subprojects/zlib/inffast.c",
+          "subprojects/zlib/inflate.c",
+          "subprojects/zlib/inftrees.c",
+          "subprojects/zlib/zutil.c"
+        ]
+      },
+      "source_counts": {
+        "GLib API subset": 1,
+        "libfdt": 8,
+        "zlib": 6
+      },
+      "zlib_define": "Z_SOLO",
+      "c_library": "toolchain Picolibc"
+    },
+    "user": {
+      "build_directory": "build/user-shell-tcg-cortex-a53",
+      "compile_database_sha256": "e6a24d805cabe671c9f4581cd86cb962e46cd5d14c64a62122b48cdd8dbcef23",
+      "config_sha256": "6c2a0293e73b9bbaca603444097438a872bc5ebae5437f214ab75ce00def4c42",
+      "source_files": {
+        "GLib API subset": [
+          "ports/zephyr/glib/glib.c"
+        ],
+        "libfdt": [],
+        "zlib": [
+          "subprojects/zlib/adler32.c",
+          "subprojects/zlib/crc32.c"
+        ]
+      },
+      "source_counts": {
+        "GLib API subset": 1,
+        "libfdt": 0,
+        "zlib": 2
+      },
+      "zlib_define": "Z_SOLO",
+      "c_library": "toolchain Picolibc"
+    }
+  },
+  "upstream_source_comparison": {
+    "libfdt": {
+      "revision": "b6910bec11614980a21e46fbccc35934b671bd81",
+      "project_patch_count": 0,
+      "changed_c_or_h_files": 0,
+      "comparison_root": "upstream/dtc/libfdt",
+      "matched_files": {
+        "fdt.c": "4f3b3ca6da6bd0a7608b767e9988020950f71924878318d13f1a0a3928ceeeb3",
+        "fdt.h": "0841a268996ad929ee062303409b9f1bd536c1dfce8516fc121bed3331e41f4e",
+        "fdt_addresses.c": "8c9c754345ce105bf55f2597173d55a69a557c3854e0eb7ac6b3a87991d4fd93",
+        "fdt_check.c": "8732f455239e742f17d486e2870c6e38afa21407c0b865053ad48baf99855f9f",
+        "fdt_empty_tree.c": "f3cdbfa1bcc86cc841544fee5a16c2f66a4da86b1065eaadab9700addb858369",
+        "fdt_overlay.c": "c3acd8cb68b8b59792b0677026f961b3e012573952d1190431f9b54d8aeec74a",
+        "fdt_ro.c": "8fbd21bb76940dfe5b32091025172ecbe6105e22f0c63bd400454006f7d39c44",
+        "fdt_rw.c": "dd7c00cd8c23638a934b20f902ac94dbd75c752455549f55b6a7baf30d51daea",
+        "fdt_strerror.c": "6eccc76d37f8789c6af9a50d6bfc7cbc5c281edc95ee93100294d6ada039d931",
+        "fdt_sw.c": "e9d193f023880f4359c3ed9954d678b51a87b1d66b783318a9d69a8122378122",
+        "fdt_wip.c": "a26966b2d991b432473f5c7f6740a3db97ae51313da0ad9eba56048d56c06c73",
+        "libfdt.h": "5d0c45df7f5b21e3a3e79e42b61c7c92b4be5683fe3776d317274d4bc343e6bc",
+        "libfdt_env.h": "273bb264cacd60bb005cfa558bee084558469b9107eaf40d7e1362571ed1bc94",
+        "libfdt_internal.h": "7c29a6e30115cdd0a30fb4014c7674ead0d4bd39b9989bed46acb4f838bbd4e8"
+      }
+    },
+    "zlib": {
+      "revision": "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "project_patch_count": 0,
+      "changed_c_or_h_files": 0,
+      "comparison_root": "upstream/zlib",
+      "matched_files": {
+        "adler32.c": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211",
+        "compress.c": "86f802c16a965e7a28737e3730b4e576c5ba40981753967e3e30916f4dc1b4b1",
+        "contrib/blast/blast.c": "1ab3e479d342bfc144167b808fb00142264bc50f24a110ca88cc774e351c218e",
+        "contrib/blast/blast.h": "9c1c422b76311d4cb06863ffc056668b6240f3dd998bc02e89ee590d482bfdc2",
+        "contrib/infback9/infback9.c": "c236f4e5ef216f5ebc66f95ccbf9d399a19ad3838444065308b8d859cb42dc74",
+        "contrib/infback9/infback9.h": "c89d926607c1afa1830c17f807de368d2f1afe2d1e7df426763f6d4bf5950379",
+        "contrib/infback9/inffix9.h": "84a2ba4727767c18af6505f0e81d9c814489c8b9ed330a25dad433db72997e43",
+        "contrib/infback9/inflate9.h": "32a907676cc36e27d0fdc0d99adb83a0b23f20ab61896269216d40fecf08d349",
+        "contrib/infback9/inftree9.c": "9e739f5735d3cd77ca1b0d46d2a43371acf2afd64c9c0889e737da369ccd92d0",
+        "contrib/infback9/inftree9.h": "4ecd9db884bf43e33fbd34273c814029022477e1597676129f9c98e09d8cef56",
+        "contrib/iostream/zfstream.h": "4369c35e66f63f52ca4a5e1759bf720507ccabb8f3f132e2f18e68686c812401",
+        "contrib/iostream2/zstream.h": "d0343e0c57ff58008b6f29643d289c72713aa2d653fe3dcd2e939fc77e7e20b6",
+        "contrib/iostream3/zfstream.h": "d89587b446f928351565d099decd006a06b7a420cb1ff8ee9bb82e4d8c7235dd",
+        "contrib/minizip/crypt.h": "5c978923cff1e80f76baf437eed699d5b4ad1bf515008d669475d3dd0d89ef70",
+        "contrib/minizip/ioapi.c": "6dff11ded396f5e3147c632a639423e80ced6705bf7bf75d21cda0c571fdf86b",
+        "contrib/minizip/ioapi.h": "6d2f2c3520dfc3061ea9128a1afb843f5cfe8d7317adcefe3a45884bc06e06a1",
+        "contrib/minizip/iowin32.c": "882383d1ee9df8c5f236411734b51e96f5e29c38496d4e531f2beb3d07f682ef",
+        "contrib/minizip/iowin32.h": "4feed64c3c5f5cff2d8a0431233766b61d4e06a9f232482cb41272ed1ca487df",
+        "contrib/minizip/miniunz.c": "c60f2c68be981464ff02dfbe01da2a8e66692416bdda2144fc75df3420b4107f",
+        "contrib/minizip/minizip.c": "6d7d7daffc713ba15a9768143471902c5bfd661a19287172f3870bc9ed2d5665",
+        "contrib/minizip/mztools.c": "3d6027270a2b6ed5ca19a339d7488f682c69798e3977d2278d379b7f14f17b63",
+        "contrib/minizip/mztools.h": "6f82c52279e8f79165f4446be652e5741a49992ac58632470335aa34c564072a",
+        "contrib/minizip/unzip.c": "10881ab576f49fe0825a21f77e322ece6ee88d34ed66fb3a3ce7a22f4b6cd2d9",
+        "contrib/minizip/unzip.h": "2ff9df0b1da7499adc806bc0ec098ef1c7b9d361a8fd5b08a98299a1a4e88399",
+        "contrib/minizip/zip.c": "213f853d71266ebe8d8335740cfe94b0731009d8fb3f7e6ae01a627398732ec8",
+        "contrib/minizip/zip.h": "99ad45c0b546b5fd0ee3d0819ff057840a892a3d6dbacc85b757a35a43047398",
+        "contrib/puff/puff.c": "5b9d75aeb5baf3575415bc6ade3f2a02e50b6b971b3f8b4fda2b03543bc6e52f",
+        "contrib/puff/puff.h": "969b7be2a930db0cdcb19b0e5b29ae6741f5a8f663b6dba6d647e12ec60cfa8e",
+        "contrib/puff/pufftest.c": "d24e31c1d277d07c268f34e9490050c6b53c68b128da3efbb1d05fc5b31004f7",
+        "contrib/testzlib/testzlib.c": "753dbb39c5d2f0fffac0406c1c94fd1da7b0251d679e4d137b0708901dfd61d8",
+        "contrib/untgz/untgz.c": "f96c1e8529eb10d723b4547aa965741d72a46f2b1d5c9a2c193bd3f5e2c2a45e",
+        "crc32.c": "8fd16f0a7714d51c89c2eb37eb98ec15e8a4dc57ba343e7b7398b19144039fda",
+        "crc32.h": "9a2223575183ac2ee8a247f20bf3ac066e8bd0140369556bdbdffc777435749e",
+        "deflate.c": "3b956337350f94c34987750f785587ef33d9c89ceaebb7c2afb189c956360cbe",
+        "deflate.h": "48baf016326d8d5e3e32ac8153cc7e22f854b8e6834830b167b998a7fb1e7989",
+        "examples/enough.c": "c14a257c60bbe0d65bb54746dd97774a1853ef9e3f78db118a27d8bc0d26d738",
+        "examples/fitblk.c": "bec64da6fc0c9a2a37a96722e8b88ca09059148e5be5ecbb486bdba5339e228a",
+        "examples/gun.c": "3bfd36b06284ba97d6105b8a6a5d18b2b34b75b3a1285f16d018680fb174915f",
+        "examples/gzappend.c": "6de91c8305e37560117bff44136abff72b16b028c0bda0bbac7ea07e4988b0ce",
+        "examples/gzjoin.c": "90b9d6c39a5fc91cf1cc9b96b025a508a8015dc502cd9374c754b44078593f57",
+        "examples/gzlog.c": "d9a2f9871e7f1724f9f9359fd4851dc0eac7af10d8234bab66327badb33d1a38",
+        "examples/gzlog.h": "681f280437f867820bf39880e2f4fc641d402879e399ba2e6a31d73feefe8edc",
+        "examples/gznorm.c": "e5a8f5c3b107f27212f7d5fbfcf072a337a1b4ea32929ae31c168997438a5cc0",
+        "examples/zpipe.c": "68140a82582ede938159630bca0fb13a93b4bf1cb2e85b08943c26242cf8f3a6",
+        "examples/zran.c": "f4bc94b710841b8412aee04c42ea522bd1687343d65f0c0d92b4dd5801d03956",
+        "examples/zran.h": "913158e13f6177224074cfa9b497438545054ac0d54ab13a6ad4182df8d2ee99",
+        "gzclose.c": "35ea6e991a63095f797d8c4cc25817fac7a7155c2ba7dcdbbf648f7871c7ea40",
+        "gzguts.h": "716fa648aca1bb06c219d7b97ad4846d8479206143bc39557bfd8283f5783e04",
+        "gzlib.c": "042c2be8ec67ad525a2812e508de7381c6766dde903acf5ae6ac4fa6b541946d",
+        "gzread.c": "72e481aca07b0b85a9783237b85dc67ff3a4c1d19878d0cec69f58d38634867b",
+        "gzwrite.c": "469b1e58932ea11bdda2a153f6655f7b3c13254240fae157181b49ed1bc93b47",
+        "infback.c": "62df9a6dd3eef126f1d81d0ad7a534504610dec44482b0a472b61c93cbab6554",
+        "inffast.c": "e6ef64ce5dc0a4cd5c7ad08ceeb2b2a698b8447f6bd156057caeb2edab68c0cb",
+        "inffast.h": "05cc5dc9ff1da7b8b52a4bd8bda0d8a5c236a2f39efe84b941516ea13857e6c5",
+        "inffixed.h": "237ba710f090e432b62ebf963bee8b302867e9691406b2d3f8ee89ee7bfef9b0",
+        "inflate.c": "34c998ce0037c0537c04b03b276f680b945f9b2c9d1e01b287605bd6879f7fd2",
+        "inflate.h": "e8d4a51b07694bf48cb91979c19974cf6a5ab0b8a09d26ec0d14df349230673e",
+        "inftrees.c": "5d4f335221d2dc76f17abd2577d92c2d7baf68fa6d7f23373b360830493d1563",
+        "inftrees.h": "0a0fcaf2ae2fae57426bdc06637270e9bba974f35202cadbdba479d946e6409d",
+        "test/example.c": "b7aeca68f7585e29ca6572542e0ecbd9c3c9370035ae15152008b3efbd4f84ac",
+        "test/infcover.c": "13a0d18d8bca440c4617d88c2236913f53eedebc50e469be472edd4280c697e5",
+        "test/minigzip.c": "57e4a1b9bb1bdb59ac9e5ac1dc9132183e8740cec2f6b5c5f2476aac08a2375f",
+        "trees.c": "f63c68c16c05fcd196050529d1a0e7657960e4136b9987d90a6ac3e58a964b0f",
+        "trees.h": "bb0a9d3ca88ee00c81adb7c636e73b97085f6ef1b52d6d58edbe2b6dc3adeb4d",
+        "uncompr.c": "04dca5e31b3b8a17d1806426f66f0c539f4184d657e149d40be07070c6227b52",
+        "zconf.h": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae",
+        "zlib.h": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c",
+        "zutil.c": "8ced40d8c88588811edd2bdb35b7439983d5e1f8e9e32b8a3b244731f3c317b7",
+        "zutil.h": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+      }
+    }
+  },
+  "glib": {
+    "treatment": "project GLib-compatible API subset",
+    "upstream_source_patch_count": null,
+    "shared_bridge_files": [
+      "src/qemu/ports/zephyr/os.c",
+      "src/qemu/ports/zephyr/file.c"
+    ],
+    "scope_limit": "one local core C unit plus shared bridges; not a full upstream GLib port"
+  },
+  "picolibc": {
+    "treatment": "toolchain C runtime selected by Zephyr",
+    "source_unit_count": null,
+    "scope_limit": "SDK library and Zephyr hooks are outside QEMU-side library source counts"
+  },
+  "qemu_in_tree_components": [
+    "fpu/softfloat.c",
+    "crypto/aes.c",
+    "crypto/sm4.c",
+    "crypto/clmul.c"
+  ],
+  "qemu_optional_libraries_outside_profile": [
+    "Pixman",
+    "libslirp",
+    "GnuTLS",
+    "nettle",
+    "SDL"
+  ],
+  "source_sha256": {
+    "west/west.yml": "c1f6ad7cb03dd5c2898e9c96cc3be15f90be227ab3131fc415eba2b171c41253",
+    "zephyr/CMakeLists.txt": "6d6903782d24cc992a8e7ee9b3e684a4f9e604105ee509bbb1d145c60c5eb533",
+    "zephyr/user.cmake": "e81a3aea243d6d24367edcc84f6ed797a11aa667e14511394a07a8f82eb4d179",
+    "zephyr/tcg.cmake": "be4b3f1bdc245774118b44e39620e0618d32e0bd810dee34e7cb889340f7d053",
+    "apps/qemu_linux/prj.conf": "d94ab85c58adcb31700cefa5cf2313d655879cbd0b1319750de458ceb7c3ca93",
+    "src/qemu/ports/zephyr/glib/glib.c": "82f49677a8db1450d792d2e94f184bf6cafbc69a85a178ad09afd20aede3a12e",
+    "src/qemu/ports/zephyr/os.c": "d6c81fb1c2b5e67d9998c22f5a48e28fec48089ed1eb00038724b346af50a290",
+    "src/qemu/ports/zephyr/file.c": "20890dca90855b59b81f0478a35d5a6f3a59af57eba35fac146ed7f07432078a"
+  },
+  "json_parser": "pandas 3.0.6",
+  "interpretation": "source selection and integration treatment; no POSIX maturity percentage"
+}

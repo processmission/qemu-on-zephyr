@@ -166,6 +166,21 @@ conformance evidence.
 [GLib implementation](../src/qemu/ports/zephyr/glib/);
 [differential tests](../tests/glib/).
 
+The [C-library inventory](posix-assessment.md#c-library-integration) separates
+library adaptation from source reuse and build configuration:
+
+| Component | System/user C units | Treatment |
+| --- | --- | --- |
+| GLib API subset | 1 / 1, plus shared bridges | Local API implementation; file, time and initialization bridges |
+| libfdt | 8 / 0 | Unchanged upstream C/header sources; no library-specific POSIX bridge |
+| zlib | 6 / 2 | Unchanged sources; `Z_SOLO` and QEMU's existing allocation callbacks |
+| Picolibc | SDK runtime | Selected by Zephyr; outside QEMU-side source counts |
+
+The counts describe compilation inputs. zlib's system profile includes
+inflate and checksum sources; its user profile includes Adler-32 and CRC-32
+sources. The project keeps no libfdt or zlib patch series. The inventory
+records the fixed revisions, selected files and comparison hashes.
+
 ### 3.3 Give the embedded runtime an owner
 
 The application creates one POSIX worker using `pthread_create()` and

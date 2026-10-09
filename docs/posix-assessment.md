@@ -134,6 +134,64 @@ errors use the function return value; the probe records errno separately.
 The observations establish the stated cases. Writable mounts, exhaustive
 thread semantics, process isolation and real-time bounds were not measured.
 
+## C-library integration
+
+The [dependency inventory](data/c-dependencies.json) records compilation
+inputs for QEMU inside Zephyr. It excludes development-host tools and the
+host GLib used by differential tests. Source-file counts describe the chosen
+build profiles and do not measure POSIX API coverage.
+
+| Component | System C units | User C units | Source treatment | Integration |
+| --- | ---: | ---: | --- | --- |
+| GLib API subset | 1 | 1 | Local API implementation | Core containers, strings, allocation and utilities; shared `os.c` and `file.c` provide additional time, initialization and file interfaces |
+| libfdt from dtc | 8 | 0 | C/header files match upstream; zero dependency patches | DTB operations on memory buffers with existing C memory/string services |
+| zlib | 6 | 2 | C/header files match upstream; zero dependency patches | `Z_SOLO`; system inflate/checksum sources and user checksum sources; upstream QEMU allocation callbacks |
+| Picolibc | SDK | SDK | Toolchain runtime selected by Zephyr | C runtime outside the QEMU-side source count; no project Picolibc patch series |
+
+The GLib core count excludes the shared port bridges. Their contents also
+serve QEMU runtime interfaces, so counting all bridge lines as GLib changes
+would duplicate those roles. The project implements selected GLib APIs;
+the recorded differential tests cover that subset.
+
+libfdt uses revision `b6910bec11614980a21e46fbccc35934b671bd81`.
+The system build selects `fdt.c`, `fdt_ro.c`, `fdt_rw.c`, `fdt_sw.c`,
+`fdt_wip.c`, `fdt_strerror.c`, `fdt_empty_tree.c` and `fdt_addresses.c`.
+The port adds no libfdt-specific file, thread or process wrappers.
+
+zlib uses revision `51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf`.
+System mode selects `adler32.c`, `crc32.c`, `inflate.c`, `inftrees.c`,
+`inffast.c` and `zutil.c`; user mode selects `adler32.c` and `crc32.c`.
+`Z_SOLO` excludes the gzip file-I/O APIs and default allocators. Upstream
+QEMU's `hw/core/loader.c` already supplies `zalloc` and `zfree` through
+`g_malloc` and `g_free`. The port reuses these callbacks with its GLib subset.
+This records configuration and allocator integration with unchanged zlib
+sources.
+
+TCG profiles compile QEMU's in-tree SoftFloat and AES/SM4 helpers.
+Pixman, libslirp, GnuTLS/nettle and SDL are examples of optional libraries
+outside this firmware profile. No library-portability result is recorded
+for those excluded features. The SDK C runtime and Zephyr's POSIX providers
+remain separate from the external library adaptation record.
+
+The collector reads both real compilation databases, verifies the selected
+mode and Picolibc flags, and checks `Z_SOLO` on each zlib compile command.
+It compares prepared libfdt/zlib C and header files with clean, fixed upstream
+trees. The output preserves source lists, revisions and hashes. After the
+system and user builds exist, run it with the figure environment described
+below. The Make commands prepare the two default profiles:
+
+```sh
+make build QEMU_MODE=system QEMU_SHELL=0 QEMU_ARGS='-accel zephyr -cpu cortex-a53'
+make build QEMU_MODE=user QEMU_SHELL=1 QEMU_ARGS='-cpu cortex-a53'
+build/figure-env/bin/python scripts/dependency_inventory.py \
+  --system-build build/linux \
+  --user-build build/user-shell-tcg-cortex-a53
+```
+
+These default paths correspond to the native A53 system build and manual A53
+user build. Other build directories can be selected with the same options.
+The build configuration and source hashes identify the recorded profiles.
+
 ## Assessment workflow
 
 ![Two assessment paths record host compatibility and QEMU implementation changes. A dashed link connects a host constraint to its effect on the emulator.](figures/posix-porting-flow.svg)
