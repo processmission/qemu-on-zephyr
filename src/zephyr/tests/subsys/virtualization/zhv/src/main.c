@@ -16,6 +16,7 @@ extern char zhv_loop_start[], zhv_loop_end[], zhv_fp_start[], zhv_fp_end[];
 extern char zhv_timer_start[], zhv_timer_end[];
 extern char zhv_timer_busy_start[], zhv_timer_busy_end[];
 extern char zhv_irq_start[], zhv_irq_vectors[], zhv_irq_end[];
+extern char zhv_rom_start[], zhv_rom_end[];
 extern int zhv_host_fp_run(struct zhv_vcpu *vcpu, const struct zhv_run_input *input,
 			   struct zhv_exit *exit, uint64_t result[10]);
 
@@ -25,6 +26,7 @@ static struct zhv_ram ram;
 static struct zhv_a64_state state;
 static struct zhv_exit stopped;
 static struct zhv_run_input input;
+static uint8_t image_data[2U * 1024U * 1024U] __aligned(2U * 1024U * 1024U);
 static __thread uint64_t tls_sentinel = 0x778899aabbccddeeULL;
 
 static void before(void *fixture)
@@ -162,11 +164,15 @@ static void high_entry(void *a, void *b, void *c)
 {
 	volatile uint64_t *marker = (uint64_t *)((uint8_t *)ram.host_va + 0x10000U);
 	struct zhv_clock clock;
+	uint64_t deadline = read_cntpct_el0() + k_ms_to_cyc_ceil64(500);
 
 	ARG_UNUSED(a);
 	ARG_UNUSED(b);
 	ARG_UNUSED(c);
-	k_sleep(K_MSEC(20));
+	/* Observe guest execution after the executor's initial cache maintenance. */
+	do {
+		k_sleep(K_MSEC(1));
+	} while (*marker == 0U && read_cntpct_el0() < deadline);
 	observed_run = in_run;
 	concurrent_result = zhv_vm_get_clock(vm, &clock);
 	first_count = *marker;
@@ -213,7 +219,8 @@ ZTEST(zhv, test_thread_handoff_and_guest_preemption)
 	zassert_true(stop_loop && observed_run, "host did not preempt guest execution");
 	zassert_equal(concurrent_result, -EBUSY);
 	zassert_true(first_count > 0U && second_count > first_count,
-		     "guest failed to resume between host wakeups");
+		     "guest failed to resume between host wakeups: %llu -> %llu",
+		     first_count, second_count);
 }
 
 ZTEST(zhv, test_guest_host_fp_separation)
@@ -362,6 +369,49 @@ ZTEST(zhv, test_validation_and_latched_wake)
 	zassert_equal(zhv_vcpu_complete(vcpu, &bad), -EINVAL);
 	bad.nr_values = 4U;
 	zassert_ok(zhv_vcpu_complete(vcpu, &bad));
+}
+
+ZTEST(zhv, test_rom_mapping_and_write_protection)
+{
+	struct zhv_ram image = {
+		.host_va = image_data,
+		.guest_ipa = BIT64(CONFIG_ARM64_HYPERVISOR_IPA_BITS) - sizeof(image_data),
+		.size = sizeof(image_data),
+	};
+	struct zhv_vm_config config = {
+		.ram_ipa = ram.guest_ipa,
+		.ram_size = ram.size,
+		.rom = &image,
+	};
+	uint64_t sentinel = 0x426f6f74496d6167ULL;
+
+	zassert_ok(zhv_vm_destroy(vm));
+	image.guest_ipa = config.ram_ipa;
+	zassert_equal(zhv_vm_create(&config, &vm, &ram), -EINVAL);
+	image.guest_ipa = BIT64(CONFIG_ARM64_HYPERVISOR_IPA_BITS) - sizeof(image_data);
+	memcpy(image_data, &sentinel, sizeof(sentinel));
+	__asm__ volatile("dc cvac, %0; dsb ish" :: "r"(image_data) : "memory");
+	zassert_ok(zhv_vm_create(&config, &vm, &ram));
+	zassert_ok(zhv_vcpu_create(vm, &vcpu));
+	state.x[20] = image.guest_ipa;
+	load_probe(zhv_rom_start, zhv_rom_end);
+	run_to(ZHV_EXIT_HVC);
+	zassert_equal(stopped.u.call.x[0], sentinel);
+	complete(sentinel);
+	run_to(ZHV_EXIT_FAIL);
+	zassert_equal((stopped.esr >> 26) & 63U, 0x24U);
+	zassert_equal(stopped.esr & 63U, 14U);
+	zassert_mem_equal(image_data, &sentinel, sizeof(sentinel));
+	zassert_equal(zhv_vcpu_run(vcpu, &input, &stopped), -EIO);
+
+	zassert_ok(zhv_vm_destroy(vm));
+	zassert_ok(zhv_vm_create(&config, &vm, &ram));
+	zassert_ok(zhv_vcpu_create(vm, &vcpu));
+	state.pc = image.guest_ipa;
+	zassert_ok(zhv_vcpu_set_state(vcpu, &state));
+	run_to(ZHV_EXIT_FAIL);
+	zassert_equal((stopped.esr >> 26) & 63U, 0x20U);
+	zassert_equal(stopped.esr & 63U, 14U);
 }
 
 ZTEST_SUITE(zhv, NULL, NULL, before, after, NULL);

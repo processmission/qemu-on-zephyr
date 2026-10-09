@@ -20,6 +20,9 @@
 #include "system/address-spaces.h"
 #include "system/device_tree.h"
 #include "system/zephyr.h"
+#ifdef CONFIG_QEMU_MEMORY_IMAGE
+#include <zephyr/virtualization/zhv.h>
+#endif
 #include "framebuffer.h"
 
 #define TYPE_ZEPHYR_VIRT MACHINE_TYPE_NAME("zephyr-virt")
@@ -37,6 +40,7 @@ static uint8_t tcg_guest_ram[256 * MiB] __attribute__((aligned(2097152)));
 typedef struct ZephyrVirtState {
     MachineState parent;
     MemoryRegion ram;
+    MemoryRegion image;
     struct arm_boot_info boot_info;
     int fdt_size;
 } ZephyrVirtState;
@@ -179,6 +183,20 @@ static void zephyr_virt_init(MachineState *machine)
         return;
     }
     create_fdt(s);
+#ifdef CONFIG_QEMU_MEMORY_IMAGE
+    const struct zhv_ram *image = zephyr_guest_rom();
+
+    memory_region_init_ram_ptr(&s->image, OBJECT(machine), "zephyr.image",
+                               image->size, image->host_va);
+    memory_region_set_readonly(&s->image, true);
+    memory_region_add_subregion(get_system_memory(), image->guest_ipa, &s->image);
+    qemu_fdt_add_subnode(machine->fdt, "/pmem@100000000");
+    qemu_fdt_setprop_string(machine->fdt, "/pmem@100000000", "compatible", "pmem-region");
+    qemu_fdt_setprop_cells(machine->fdt, "/pmem@100000000", "reg",
+                          image->guest_ipa >> 32, (uint32_t)image->guest_ipa,
+                          image->size >> 32, (uint32_t)image->size);
+    qemu_fdt_setprop(machine->fdt, "/pmem@100000000", "volatile", NULL, 0);
+#endif
     s->boot_info.ram_size = size;
 #ifdef CONFIG_QEMU_FRAMEBUFFER
     s->boot_info.ram_size -= QEMU_ZEPHYR_FRAMEBUFFER_SIZE;
@@ -200,7 +218,7 @@ static void zephyr_virt_class_init(ObjectClass *object_class, const void *data)
     mc->desc = "Zephyr ARM virt profile (one CPU, PL011, GICv3)";
     mc->init = zephyr_virt_init;
     mc->default_cpu_type = ARM_CPU_TYPE_NAME("cortex-a53");
-    mc->default_ram_size = 256 * MiB;
+    mc->default_ram_size = ZEPHYR_GUEST_RAM_MIB * MiB;
     mc->min_cpus = 1;
     mc->max_cpus = 1;
     mc->default_cpus = 1;

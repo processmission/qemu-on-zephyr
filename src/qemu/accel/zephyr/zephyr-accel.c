@@ -90,6 +90,7 @@ static int zephyr_machine_init(AccelState *accel, MachineState *machine)
     struct zhv_vm_config config = {
         .ram_ipa = 0x40000000,
         .ram_size = machine->ram_size,
+        .rom = zephyr_guest_rom(),
     };
     int ret;
 

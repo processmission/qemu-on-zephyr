@@ -7,6 +7,15 @@
 
 #include "qemu/typedefs.h"
 
+#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
+#define ZEPHYR_GUEST_RAM_MIB CONFIG_ARM64_HYPERVISOR_RAM_SIZE_MIB
+#else
+#define ZEPHYR_GUEST_RAM_MIB 256
+#endif
+
+struct zhv_ram;
+const struct zhv_ram *zephyr_guest_rom(void);
+
 bool zephyr_enabled(void);
 
 /* The Machine owns the MemoryRegion; the native VM owns this RAM allocation. */

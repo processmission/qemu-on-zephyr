@@ -257,6 +257,7 @@ if(CONFIG_QEMU_SYSTEM)
     hw/core/loader.c
     system/device_tree.c
     ports/zephyr/machine.c
+    ports/zephyr/memory-image.c
   )
   foreach(source_file IN LISTS qemu_native_common_sources qemu_native_arm_sources)
     zephyr_library_sources("${qemu_root}/${source_file}")

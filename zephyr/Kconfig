@@ -94,6 +94,14 @@ config QEMU_TCG_CACHE_SIZE_MIB
 	range 2 64
 	depends on QEMU_TCG
 
+config QEMU_MEMORY_IMAGE
+	bool "Read-only memory image for a Linux pmem device"
+	depends on QEMU_ZEPHYR_ACCEL
+	help
+	  Map the qemu,memory-image devicetree region at guest IPA 4 GiB.
+	  The bootloader must populate this region with the filesystem image.
+	  Linux discovers it as a pmem-region and mounts it read-only.
+
 config QEMU_NATIVE_PROBE_ONLY
 	bool "Stop after the native CPU and PL011 integration probe"
 	depends on QEMU_ZEPHYR_ACCEL

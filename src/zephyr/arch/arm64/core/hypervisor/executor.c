@@ -18,7 +18,10 @@
 
 #define BLOCK_SIZE BIT64(21)
 #define RAM_CAPACITY (CONFIG_ARM64_HYPERVISOR_RAM_SIZE_MIB * 1024ULL * 1024ULL)
+#define IPA_LIMIT BIT64(CONFIG_ARM64_HYPERVISOR_IPA_BITS)
+#define S2_L1_ENTRIES (IPA_LIMIT >> 30)
 #define S2_RAM_ATTRIBUTES (BIT64(10) | (3ULL << 8) | (3ULL << 6) | (15ULL << 2) | 1ULL)
+#define S2_ROM_ATTRIBUTES ((S2_RAM_ATTRIBUTES & ~BIT64(7)) | BIT64(54))
 #define GUEST_HCR (BIT64(31) | BIT64(22) | BIT64(21) | BIT64(20) | BIT64(19) | BIT64(18) | \
 		   BIT64(14) | BIT64(13) | BIT64(5) | BIT64(4) | BIT64(3) | BIT64(0))
 
@@ -46,7 +49,7 @@ static struct zhv_vm single_vm;
 static struct zhv_vcpu single_vcpu;
 static uint8_t guest_ram[RAM_CAPACITY] __aligned(BLOCK_SIZE) __noinit;
 static uint64_t stage2_l1[512] __aligned(4096);
-static uint64_t stage2_l2[4][512] __aligned(4096);
+static uint64_t stage2_l2[S2_L1_ENTRIES][512] __aligned(4096);
 static K_MUTEX_DEFINE(operation_lock);
 static K_SEM_DEFINE(wake_event, 0, 1);
 
@@ -138,21 +141,38 @@ static struct zhv_timer_sample timer_sample(void)
 	return sample;
 }
 
+static bool valid_ipa(uint64_t ipa, size_t size)
+{
+	return size != 0U && (ipa % BLOCK_SIZE) == 0U &&
+	       (size % BLOCK_SIZE) == 0U && ipa < IPA_LIMIT && size <= IPA_LIMIT - ipa;
+}
+
+static void map_stage2(uint64_t base, uint64_t pa, size_t size, uint64_t attributes)
+{
+	for (size_t offset = 0U; offset < size; offset += BLOCK_SIZE) {
+		uint64_t ipa = base + offset;
+		size_t l1 = ipa >> 30;
+		size_t l2 = (ipa >> 21) & 511U;
+
+		stage2_l1[l1] = k_mem_phys_addr(stage2_l2[l1]) | 3U;
+		stage2_l2[l1][l2] = (pa + offset) | attributes;
+	}
+}
+
 int zhv_vm_create(const struct zhv_vm_config *config, struct zhv_vm **vm, struct zhv_ram *ram)
 {
 	static const uint8_t pa_bits[] = {32, 36, 40, 42, 44, 48};
 	uint64_t pa;
 	uint64_t parange;
 	uint64_t pa_limit;
+	uint64_t rom_pa = 0U;
 	int ret = take_lock();
 
 	if (ret != 0) {
 		return ret;
 	}
-	if (config == NULL || vm == NULL || ram == NULL || config->ram_size == 0U ||
-	    (config->ram_ipa % BLOCK_SIZE) != 0U ||
-	    (config->ram_size % BLOCK_SIZE) != 0U || config->ram_ipa >= BIT64(32) ||
-	    config->ram_size > BIT64(32) - config->ram_ipa) {
+	if (config == NULL || vm == NULL || ram == NULL ||
+	    !valid_ipa(config->ram_ipa, config->ram_size)) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -177,23 +197,37 @@ int zhv_vm_create(const struct zhv_vm_config *config, struct zhv_vm **vm, struct
 		ret = -ENOTSUP;
 		goto out;
 	}
+	if (config->rom != NULL) {
+		const struct zhv_ram *rom = config->rom;
+
+		if (rom->host_va == NULL || !valid_ipa(rom->guest_ipa, rom->size) ||
+		    (rom->guest_ipa < config->ram_ipa + config->ram_size &&
+		     config->ram_ipa < rom->guest_ipa + rom->size)) {
+			ret = -EINVAL;
+			goto out;
+		}
+		rom_pa = k_mem_phys_addr(rom->host_va);
+		if ((rom_pa % BLOCK_SIZE) != 0U || rom_pa >= pa_limit ||
+		    rom->size > pa_limit - rom_pa ||
+		    (rom_pa < pa + config->ram_size && pa < rom_pa + rom->size)) {
+			ret = -EINVAL;
+			goto out;
+		}
+	}
 	memset(&single_vcpu, 0, sizeof(single_vcpu));
 	memset(stage2_l1, 0, sizeof(stage2_l1));
 	memset(stage2_l2, 0, sizeof(stage2_l2));
 	memset(guest_ram, 0, config->ram_size);
-	for (size_t offset = 0U; offset < config->ram_size; offset += BLOCK_SIZE) {
-		uint64_t ipa = config->ram_ipa + offset;
-		size_t l1 = ipa >> 30;
-		size_t l2 = (ipa >> 21) & 511U;
-
-		stage2_l1[l1] = k_mem_phys_addr(stage2_l2[l1]) | 3U;
-		stage2_l2[l1][l2] = (pa + offset) | S2_RAM_ATTRIBUTES;
+	map_stage2(config->ram_ipa, pa, config->ram_size, S2_RAM_ATTRIBUTES);
+	if (config->rom != NULL) {
+		map_stage2(config->rom->guest_ipa, rom_pa, config->rom->size, S2_ROM_ATTRIBUTES);
 	}
 	single_vm.ram = (struct zhv_ram){guest_ram, config->ram_ipa, config->ram_size};
 	single_vm.clock.frequency_hz = read_cntfrq_el0();
 	single_vm.clock.counter_offset = read_cntpct_el0();
 	single_vcpu.context.guest_vtcr = BIT64(31) | (parange << 16) | (3U << 12) |
-					 (1U << 10) | (1U << 8) | (1U << 6) | 32U;
+					 (1U << 10) | (1U << 8) | (1U << 6) |
+					 (64U - CONFIG_ARM64_HYPERVISOR_IPA_BITS);
 	single_vcpu.context.guest_vttbr = BIT64(48) | k_mem_phys_addr(stage2_l1);
 	single_vcpu.context.guest_offset = single_vm.clock.counter_offset;
 	invalidate_stage2();
@@ -335,7 +369,7 @@ static void decode_exit(struct zhv_exit *exit)
 
 		if ((syndrome & BIT64(24)) == 0U ||
 		    (syndrome & (BIT64(7) | BIT64(8) | BIT64(10))) != 0U ||
-		    dfsc < 4U || dfsc > 7U || ipa >= BIT64(32) ||
+		    dfsc < 4U || dfsc > 7U || ipa >= IPA_LIMIT ||
 		    (ipa >= single_vm.ram.guest_ipa &&
 		     ipa - single_vm.ram.guest_ipa < single_vm.ram.size)) {
 			return;

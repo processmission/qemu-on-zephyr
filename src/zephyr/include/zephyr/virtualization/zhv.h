@@ -18,10 +18,12 @@
 
 struct zhv_vm;
 struct zhv_vcpu;
+struct zhv_ram;
 
 struct zhv_vm_config {
 	uint64_t ram_ipa;
 	size_t ram_size;
+	const struct zhv_ram *rom;
 };
 
 struct zhv_ram {
@@ -113,6 +115,8 @@ struct zhv_completion {
 /**
  * @brief Reserve the single VM and its exclusive RAM backing.
  * @param config RAM IPA and size, both aligned to 2 MiB.
+ * Optional ROM has the same alignment, disjoint IPA, and a host mapping
+ * valid until VM destruction. The guest can read it but cannot write or execute it.
  * @param vm Resulting VM handle.
  * @param ram Borrowed RAM mapping, valid until destruction.
  * @retval 0 VM created.

@@ -39,6 +39,7 @@ additional patches after that baseline.
 | 0005 | EL2 lazy FPU ownership |
 | 0006 | Native executor build hook and QEMU board configuration |
 | 0007 | Read-only Ext2 inode close and synchronization |
+| 0008 | ARM64 interrupt metadata placement for virtual address ranges above 4 GiB |
 
 These are module integration patches: new implementation files remain in
 `src/qemu/` and `src/zephyr/` and are overlaid by `make prepare`. The series

@@ -168,3 +168,13 @@ zhv_irq_handler:
 	hvc	#0x140
 	b	.
 zhv_irq_end:
+
+GTEXT(zhv_rom_start)
+GTEXT(zhv_rom_end)
+SECTION_FUNC(TEXT, zhv_rom_start)
+	ldr	x0, [x20]
+	hvc	#0x150
+	str	x0, [x20]
+	hvc	#0x151
+	b	.
+zhv_rom_end:

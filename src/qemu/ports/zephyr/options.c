@@ -5,6 +5,7 @@
 #include "qemu/units.h"
 #include "qemu/zephyr.h"
 #include "qapi/error.h"
+#include "system/zephyr.h"
 
 #ifdef CONFIG_QEMU_TCG
 #define BUILT_ACCEL "tcg"
@@ -70,11 +71,12 @@ static void print_help(void)
            "  [-append \"console=ttyAMA0 rdinit=/bin/sh\"]\n"
            "  -bios /images/firmware.bin  Raw EL1 firmware at 0x40000000\n"
            "  -kernel also accepts AArch64 ELF firmware through QEMU's loader\n"
-           "  -m 256M -smp 1 -nographic  Fixed guest resources and serial console\n"
+           "  -m %uM -smp 1 -nographic  Configured guest resources and serial console\n"
            "  -M help | -accel help | -cpu help\n"
            "  -status  Show guest state and scheduling counters\n"
            "  Ctrl-] stops the guest and returns to the Zephyr shell\n"
-           "  Use kernel reboot cold before starting another guest\n", BUILT_ACCEL);
+           "  Use kernel reboot cold before starting another guest\n",
+           BUILT_ACCEL, ZEPHYR_GUEST_RAM_MIB);
 }
 
 int qemu_zephyr_parse_options(size_t argc, char **argv,
@@ -178,8 +180,10 @@ int qemu_zephyr_parse_options(size_t argc, char **argv,
         if (!strcmp(key, "-m")) {
             uint64_t bytes;
 
-            if (qemu_strtosz_MiB(value, NULL, &bytes) || bytes != 256 * MiB) {
-                snprintf(error, error_size, "This machine requires -m 256M");
+            if (qemu_strtosz_MiB(value, NULL, &bytes) ||
+                bytes != ZEPHYR_GUEST_RAM_MIB * MiB) {
+                snprintf(error, error_size, "This machine requires -m %uM",
+                         ZEPHYR_GUEST_RAM_MIB);
                 goto out;
             }
             continue;
