@@ -35,6 +35,8 @@ jobs:
             ~/Library/Caches/pip
           key: qoz-${{ runner.os }}-${{ runner.arch }}-sdk-1.0.1-${{ hashFiles('requirements*.txt', 'tests/requirements.txt') }}
       - name: Set up workspace and SDK
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: make setup
       - name: Check configuration and Linux boot
         run: |

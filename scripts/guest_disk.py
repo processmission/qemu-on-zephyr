@@ -10,18 +10,22 @@ import subprocess
 import tempfile
 
 
-def mke2fs_path() -> str:
-    found = shutil.which("mke2fs")
-    if found:
-        return found
+def e2fsprogs_tool_path(name: str) -> str:
     brew = shutil.which("brew")
     if brew:
         result = subprocess.run([brew, "--prefix", "e2fsprogs"],
                                 capture_output=True, text=True)
-        candidate = Path(result.stdout.strip()) / "sbin/mke2fs"
+        candidate = Path(result.stdout.strip()) / "sbin" / name
         if result.returncode == 0 and candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    raise RuntimeError("mke2fs is missing; install e2fsprogs with make host-deps")
+    found = shutil.which(name)
+    if found:
+        return found
+    raise RuntimeError(f"{name} is missing; install e2fsprogs with make host-deps")
+
+
+def mke2fs_path() -> str:
+    return e2fsprogs_tool_path("mke2fs")
 
 
 def disk_path(root: Path, *, mode: str = "system") -> Path:

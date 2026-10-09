@@ -34,6 +34,7 @@ def main():
     venv.EnvBuilder(with_pip=True, symlinks=True).create(VENV)
     python = str(VENV / "bin/python")
     env = command_env(require_sdk=False)
+    github_token = env.pop("GITHUB_TOKEN", None)
     run(python, "-m", "pip", "install", "-r", "requirements-bootstrap.txt", env=env)
     run(python, "scripts/project.py", "init", env=env)
     # The module requirement list includes Zephyr's pinned base requirements and
@@ -47,8 +48,11 @@ def main():
     if sdk is None or not sdk_qemu(sdk).is_file():
         destination = sdk or TOOLS / f"zephyr-sdk-{SDK_VERSION}"
         TOOLS.mkdir(exist_ok=True)
-        run(python, "-m", "west", "sdk", "install", "--version", SDK_VERSION,
-            "--install-dir", str(destination), "--gnu-toolchains", "aarch64-zephyr-elf", env=env)
+        sdk_install = [python, "-m", "west", "sdk", "install", "--version", SDK_VERSION,
+                       "--install-dir", str(destination), "--gnu-toolchains", "aarch64-zephyr-elf"]
+        if github_token:
+            sdk_install.extend(("--personal-access-token", github_token))
+        run(*sdk_install, env=env)
         sdk = find_sdk()
         if sdk is None or not sdk_qemu(sdk).is_file():
             raise RuntimeError("SDK installation did not produce the AArch64 toolchain and host QEMU")

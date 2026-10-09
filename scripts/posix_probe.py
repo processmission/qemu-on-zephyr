@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from environment import command_env
-from guest_disk import mke2fs_path
+from guest_disk import e2fsprogs_tool_path
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -131,9 +131,9 @@ def main() -> None:
         label = str(filename.relative_to(ROOT)) if filename.is_relative_to(ROOT) else filename.name
         with filename.open("rb") as source:
             hashes[label] = hashlib.file_digest(source, "sha256").hexdigest()
-    debugfs = Path(mke2fs_path()).with_name("debugfs")
+    debugfs = e2fsprogs_tool_path("debugfs")
     disk_inspection = subprocess.check_output(
-        [str(debugfs), "-R", "stat /hello", str(disk)], env=env,
+        [debugfs, "-R", "stat /hello", str(disk)], env=env,
         stderr=subprocess.STDOUT, text=True)
     metadata = {
         "zephyr_revision": subprocess.check_output(

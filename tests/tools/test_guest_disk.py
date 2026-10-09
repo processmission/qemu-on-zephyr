@@ -13,7 +13,7 @@ from elftools.elf.elffile import ELFFile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-from guest_disk import disk_path, mke2fs_path, prepare_disk
+from guest_disk import disk_path, e2fsprogs_tool_path, prepare_disk
 from user_programs import prepare_user_programs
 
 
@@ -40,8 +40,8 @@ class GuestDiskTests(unittest.TestCase):
             self.assertEqual(root / "build/user-disk.img", disk)
             self.assertNotEqual(disk_path(root), disk)
             recovered = root / "hello"
-            debugfs = Path(mke2fs_path()).with_name("debugfs")
-            subprocess.run([str(debugfs), "-R", f"dump /hello {recovered}", str(disk)],
+            debugfs = e2fsprogs_tool_path("debugfs")
+            subprocess.run([debugfs, "-R", f"dump /hello {recovered}", str(disk)],
                            check=True, capture_output=True)
             self.assertEqual(binary.read_bytes(), recovered.read_bytes())
             os.environ["GUEST_DISK"] = str(disk)
@@ -72,7 +72,8 @@ class GuestDiskTests(unittest.TestCase):
             os.environ["GUEST_FILES"] = str(source)
             os.environ.pop("GUEST_DISK", None)
             disk = prepare_disk(root)
-            tools = Path(mke2fs_path()).parent
+            debugfs = e2fsprogs_tool_path("debugfs")
+            e2fsck = e2fsprogs_tool_path("e2fsck")
             before = disk.stat().st_mtime_ns
             self.assertEqual(disk, prepare_disk(root))
             self.assertEqual(before, disk.stat().st_mtime_ns)
@@ -81,12 +82,12 @@ class GuestDiskTests(unittest.TestCase):
             prepare_disk(root)
             for path in (image, initrd):
                 recovered = root / path.name
-                subprocess.run([str(tools / "debugfs"), "-R",
+                subprocess.run([debugfs, "-R",
                                 f"dump /{path.name} {recovered}", str(disk)],
                                check=True, capture_output=True)
                 self.assertEqual(hashlib.sha256(path.read_bytes()).digest(),
                                  hashlib.sha256(recovered.read_bytes()).digest())
-            subprocess.run([str(tools / "e2fsck"), "-fn", str(disk)],
+            subprocess.run([e2fsck, "-fn", str(disk)],
                            check=True, capture_output=True)
             os.environ["GUEST_DISK"] = str(disk)
             self.assertEqual(disk, prepare_disk(root))
