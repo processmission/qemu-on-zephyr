@@ -110,3 +110,26 @@ Individual recordings can reuse existing firmware:
 
 The recorder uses Menlo on macOS or DejaVu Sans Mono on Linux. `--font` accepts
 another monospace TrueType font, and `--output` selects another output directory.
+
+## Continuous integration
+
+The `Alpine Linux desktop` job in `.github/workflows/build.yml` runs on
+`ubuntu-24.04-arm` for pushes, pull requests and manual workflow runs. It builds
+the ARM64 Alpine image in Docker and uses Ubuntu's QEMU with `ramfb` support
+to run the Zephyr native Cortex-A53 profile without a display window.
+
+The same acceptance command is available locally after installing
+`requirements-demo.txt`:
+
+```sh
+make check-desktop
+```
+
+This checks desktop readiness, terminal commands, menu interaction, window
+movement, live Xorg/JWM/xterm processes, `/dev/fb0`, changing display frames,
+and the Zephyr status after Linux powers off. Each desktop control command
+must return zero; failed commands, failed guest checks and unchanged display
+frames return a nonzero validation status.
+The validation GIF is written to `build/desktop-validation/`. CI uploads it
+with serial logs, screenshots, recording metadata, the installed package list,
+kernel configuration and image provenance as `alpine-desktop-validation`.

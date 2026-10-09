@@ -10,6 +10,51 @@ permissions:
   contents: read
 
 jobs:
+  desktop:
+    name: Alpine Linux desktop
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+    env:
+      JOBS: 4
+      QEMU_SYSTEM_AARCH64: /usr/bin/qemu-system-aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host and desktop validation dependencies
+        run: |
+          make host-deps
+          sudo apt-get install -y --no-install-recommends qemu-system-arm fonts-dejavu-core
+          docker info
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tools/zephyr-sdk-1.0.1
+            downloads
+            ~/.cache/pip
+          key: qoz-${{ runner.os }}-${{ runner.arch }}-sdk-1.0.1-${{ hashFiles('requirements*.txt', 'tests/requirements.txt') }}
+      - name: Set up workspace and SDK
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-demo.txt
+      - name: Boot Alpine Linux and verify desktop interaction
+        run: make check-desktop
+      - name: Upload desktop validation artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: alpine-desktop-validation
+          path: |
+            build/desktop-validation/
+            build/demo-recordings/system-desktop.log
+            build/demo-recordings/system-desktop.cast
+            build/demo-recordings/system-desktop.png
+            build/demo-recordings/system-desktop.json
+            build/demo-recordings/desktop-frame.ppm
+            build/desktop-files/packages.txt
+            build/desktop-files/kernel.config
+            build/desktop-files/provenance.json
+
   build:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
