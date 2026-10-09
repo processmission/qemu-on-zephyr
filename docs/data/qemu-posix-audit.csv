@@ -1,0 +1,51 @@
+api,category,scope,provider,reference,qualification
+pthread_attr_init,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Initialize explicit worker attributes
+pthread_attr_destroy,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Release worker attribute object
+pthread_attr_setstack,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Use application-provided worker memory
+pthread_attr_setschedpolicy,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Select SCHED_RR for the worker
+pthread_attr_setschedparam,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Select the configured worker priority
+pthread_attr_setinheritsched,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Use explicit scheduling attributes
+pthread_create,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Create one QEMU owner thread
+pthread_join,reused,selected,Zephyr pthread,apps/qemu_linux/src/main.c,Join the worker in the non-shell path
+pthread_self,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Identify the QEMU owner thread
+pthread_equal,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Compare host thread identities
+pthread_mutex_init,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Initialize selected QEMU mutexes
+pthread_mutex_destroy,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Destroy initialized mutexes
+pthread_mutex_lock,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Lock and track BQL ownership
+pthread_mutex_trylock,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Propagate EBUSY and check other errors
+pthread_mutex_unlock,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Unlock and update BQL ownership
+pthread_cond_init,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Initialize selected condition variables
+pthread_cond_destroy,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Destroy condition variables
+pthread_cond_signal,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Signal a condition
+pthread_cond_broadcast,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Broadcast a condition
+pthread_cond_wait,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Wait while preserving BQL ownership accounting
+pthread_cond_timedwait,reused,selected,Zephyr pthread,src/qemu/ports/zephyr/os.c,Use a normalized CLOCK_REALTIME absolute deadline
+clock_gettime,reused,selected,Zephyr POSIX clock,src/qemu/ports/zephyr/os.c,Read host realtime and selected guest clock requests
+clock_getres,reused,selected,Zephyr POSIX clock,src/qemu/ports/zephyr/user-syscall.c,Serve realtime and monotonic resolution queries
+open,reused,selected,Zephyr VFS,src/qemu/ports/zephyr/file.c,Open real images on the read-only Ext2 mount
+read,reused,selected,Zephyr VFS,src/qemu/ports/zephyr/file.c,Read image and ELF bytes
+write,reused,selected,Zephyr VFS,src/qemu/ports/zephyr/user-syscall.c,Delegate non-console descriptor writes; /images returns EROFS
+close,reused,selected,Zephyr VFS,src/qemu/ports/zephyr/file.c,Close owned descriptors
+lseek,reused,selected,Zephyr VFS,src/qemu/ports/zephyr/file.c,Seek and restore private descriptor offsets
+uname,reused,selected,Zephyr POSIX identity,src/qemu/ports/zephyr/user-syscall.c,Read host identity before guest ABI conversion
+stat,limited,selected,Zephyr VFS,src/qemu/ports/zephyr/user-syscall.c,Type and size available; complete Unix permission and ownership metadata unavailable
+fstat,limited,selected,Zephyr VFS,src/qemu/ports/zephyr/file.c,Loader accepts regular ELF without executable permission bits
+pread,adapted,selected,Project file adapter,src/qemu/ports/zephyr/file.c,Seek-read-restore on single-owner regular-file descriptors
+pwrite,adapted,selected,Project file adapter,src/qemu/ports/zephyr/file.c,Seek-write-restore adapter exists; read-only input disk still rejects writes
+mmap,adapted,selected,Kernel and QEMU page metadata,src/qemu/ports/zephyr/user-memory.c,Bounded private guest mappings and JIT aliases; no general host process mapping claim
+munmap,adapted,selected,Kernel and QEMU page metadata,src/qemu/ports/zephyr/user-memory.c,Remove guest mappings and invalidate translations
+mprotect,adapted,selected,Kernel and QEMU page metadata,src/qemu/ports/zephyr/user-memory.c,Guest page flags and checked memory helpers; native POSIX call returns ENOSYS
+sigsetjmp,adapted,selected,Picolibc setjmp,src/qemu/ports/zephyr/os-zephyr.h,Selected QEMU calls request savesigs zero; signal-mask preservation unsupported
+siglongjmp,adapted,selected,Picolibc longjmp,src/qemu/ports/zephyr/os-zephyr.h,Selected no-mask-save jump path only
+flockfile,reused,selected,Picolibc stdio locking,src/qemu/ports/zephyr/os.c,Project qemu_flockfile delegates to the libc function
+funlockfile,reused,selected,Picolibc stdio locking,src/qemu/ports/zephyr/os.c,Project qemu_funlockfile delegates to the libc function
+exit,adapted,selected,Worker-local exit target,src/qemu/ports/zephyr/os.c,Convert selected QEMU exits into command results
+sigaction,unavailable,extension,No host fault-delivery path,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS; guest handler installation not implemented
+kill,unavailable,extension,No process signal delivery,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS; no guest process signal delivery
+pause,unavailable,extension,No process signal wait,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS
+sigpending,unavailable,extension,No process pending-signal query,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS
+sigsuspend,unavailable,extension,No process signal suspension,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS
+sigwait,unavailable,extension,No process signal wait,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS
+fork,unavailable,extension,No multi-process model,upstream/zephyr/subsys/portability/posix/options/Kconfig.procN,Process creation is outside the Zephyr host and guest runtime profile
+execve,unavailable,extension,No process image replacement,upstream/zephyr/subsys/portability/posix/options/Kconfig.procN,Explicit ELF launch has its own lifecycle; execve contract not supplied
+waitpid,unavailable,extension,No child-process lifecycle,upstream/zephyr/subsys/portability/posix/options/Kconfig.procN,No child processes to reap in the current runtime

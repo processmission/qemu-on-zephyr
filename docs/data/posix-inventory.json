@@ -1,0 +1,114 @@
+{
+  "zephyr_revision": "ba25413e5b6b2661a71db24888f6b89274f1480d",
+  "implementation_revision": "2b1161806afe14fe57dec97234f37aac1ea84e5e",
+  "source": "upstream/zephyr/doc/services/portability/posix/option_groups/index.rst",
+  "source_sha256": "9ecd75d3de866f866ee3983465ebcff0c62dea82621f56468709d7d8e899d090",
+  "audit_sha256": "8c00c9c288923aecd2f1c46362ba80ada9a8f9cc3ba10ce5a5966b667e26415a",
+  "audit_source_sha256": {
+    "apps/qemu_linux/src/main.c": "920423766b30cf1e2044d1afd9ac5f6bc171787c9b231cc36a0b46fa32916e13",
+    "src/qemu/ports/zephyr/file.c": "20890dca90855b59b81f0478a35d5a6f3a59af57eba35fac146ed7f07432078a",
+    "src/qemu/ports/zephyr/os-zephyr.h": "c426b3cd2e1c6c47bddd00c4f86e5d79509aa5c0646d010538f7c1b1a1e147d9",
+    "src/qemu/ports/zephyr/os.c": "d6c81fb1c2b5e67d9998c22f5a48e28fec48089ed1eb00038724b346af50a290",
+    "src/qemu/ports/zephyr/user-memory.c": "28a02161e0ed75e2f57c41a195b6ef0d3e2b19769e6d98786cefdd18016c29af",
+    "src/qemu/ports/zephyr/user-syscall.c": "b0ee7b6679f4de3fb3ad086ed11e120e4b5965f49036f33742f2719d5775ce11",
+    "upstream/zephyr/subsys/portability/posix/options/Kconfig.procN": "44fee8c39f250c9e5f8ae17bd168439eed7eb1b2d26cc965a51e6f2f592b305a",
+    "upstream/zephyr/subsys/portability/posix/options/signal.c": "0883dcecadb96801f7db1fe42f4ef69a6b84de9e28e74250f5ca6b362deeb068"
+  },
+  "table_count": 47,
+  "callable_rows": 419,
+  "unique_catalog_count": 393,
+  "excluded_rows": [
+    {
+      "api": "optarg",
+      "group": "POSIX_C_LIB_EXT",
+      "support_cell": "yes"
+    },
+    {
+      "api": "opterr",
+      "group": "POSIX_C_LIB_EXT",
+      "support_cell": "yes"
+    },
+    {
+      "api": "optind",
+      "group": "POSIX_C_LIB_EXT",
+      "support_cell": "yes"
+    },
+    {
+      "api": "optopt",
+      "group": "POSIX_C_LIB_EXT",
+      "support_cell": "yes"
+    },
+    {
+      "api": "stderr",
+      "group": "POSIX_DEVICE_IO",
+      "support_cell": "yes"
+    },
+    {
+      "api": "stdin",
+      "group": "POSIX_DEVICE_IO",
+      "support_cell": "yes"
+    },
+    {
+      "api": "stdout",
+      "group": "POSIX_DEVICE_IO",
+      "support_cell": "yes"
+    },
+    {
+      "api": "environ",
+      "group": "POSIX_SINGLE_PROCESS",
+      "support_cell": "yes"
+    },
+    {
+      "api": "errno",
+      "group": "POSIX_SINGLE_PROCESS",
+      "support_cell": "yes"
+    },
+    {
+      "api": "CLOCK_PROCESS_CPUTIME_ID",
+      "group": "_POSIX_CPUTIME",
+      "support_cell": "yes"
+    },
+    {
+      "api": "CLOCK_MONOTONIC",
+      "group": "_POSIX_MONOTONIC_CLOCK",
+      "support_cell": "yes"
+    },
+    {
+      "api": "CLOCK_THREAD_CPUTIME_ID",
+      "group": "_POSIX_THREAD_CPUTIME",
+      "support_cell": "yes"
+    }
+  ],
+  "documentation_counts": {
+    "unqualified_yes": 289,
+    "qualified": 53,
+    "unmarked": 51
+  },
+  "audit_counts": {
+    "reused": 31,
+    "adapted": 8,
+    "limited": 2,
+    "unavailable": 9
+  },
+  "audit_scope_counts": {
+    "selected": 41,
+    "extension": 9
+  },
+  "percentage_rule": "100 * category interface count / panel interface count; one decimal place",
+  "physical_size_mm": [
+    180,
+    112
+  ],
+  "png_dpi": 300,
+  "svg_serialization": "XML attribute whitespace normalization and indentation; geometry and labels retained",
+  "packages": {
+    "matplotlib": "3.11.2",
+    "pandas": "3.0.6",
+    "docutils": "0.23",
+    "lxml": "6.1.1"
+  },
+  "outputs": [
+    "docs/figures/posix-support.svg",
+    "docs/figures/posix-support.png"
+  ]
+}

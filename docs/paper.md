@@ -223,6 +223,22 @@ embedded execution an explicit lifecycle within the surrounding RTOS.
 
 ### 4.1 Findings by host requirement
 
+The [quantitative assessment](posix-assessment.md) preserves the complete
+inventories and sources. The pinned Zephyr tables enumerate 393 unique
+callable names: 289 unqualified `yes`, 53 qualified and 51 unmarked. A separate
+50-contract host audit contains 31 reused APIs, 8 port adaptations, 2 limited
+metadata interfaces and 9 unavailable process/signal extensions. Those nine
+extensions describe capabilities beyond the current profile and are not all
+requirements of the present Linux boot.
+
+![Zephyr documentation and QEMU host-interface inventories, each with its own denominator.](figures/posix-support.svg)
+
+These percentages describe the enumerated interfaces. Some unqualified
+documentation entries have `ENOSYS` implementations, and some unmarked
+entries have actual providers. Source checks and runtime observations remain
+necessary for a maturity assessment. The
+[assessment workflow](figures/posix-porting-flow.svg) records this distinction.
+
 The following findings concern the pinned Zephyr revision and this port's
 configuration. “Adapted” identifies behavior implemented by the port;
 “kernel mechanism” identifies a direct Zephyr facility used at that boundary.
@@ -530,6 +546,15 @@ and lifecycle integration, independently of a POSIX conformance claim.
 
 ## 7. Implications for POSIX maturity and deployment
 
+The [direct native probe](experiments/posix-native/README.md) adds empirical
+evidence for these boundaries. File reads, clock queries, a real pthread
+worker and condition notification completed. Regular-file positional I/O
+returned `ENOTSUP`; `mprotect` and the tested signal-control providers returned
+`ENOSYS`. The disk's real inode mode was 0755, while `stat/fstat` reported zero
+permission bits with the correct regular-file type and size. The probe's
+explicit declarations for four omitted public-header prototypes are recorded
+with its configuration and observations.
+
 The port demonstrates that a selected Zephyr POSIX configuration can supply
 substantial parts of the host environment required by QEMU. The adaptation
 matrix identifies where compatibility depends on additional contracts.
@@ -631,3 +656,9 @@ tectonic --outdir build/paper docs/paper.tex
 
 Online references were consulted on 9 October 2026. Project-specific findings
 refer to the implementation baseline and the cited validation record.
+
+Figure preparation also uses Kassis, T., Agarwal, V., He, Y., Patel, D., and
+Brueckner, A. M. (2026),
+[Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents](https://doi.org/10.48550/arXiv.2609.00065).
+The [figure provenance](posix-assessment.md#reproduction-and-figure-provenance)
+records plotting tools, data transformations and the Mermaid source.

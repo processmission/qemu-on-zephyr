@@ -1,0 +1,17 @@
+%% Source for the manuscript's portability assessment workflow.
+flowchart LR
+    A["Zephyr catalog<br/>393 interfaces"] --> C["Inspect providers<br/>and configuration"]
+    B["QEMU audit<br/>50 contracts"] --> C
+    C --> D["Native probes<br/>and guest tests"]
+    D --> E["Reuse host API"]
+    D --> F["Constrain or adapt"]
+    D --> G["Unavailable"]
+    E --> H["Evidence ledger<br/>sources and limits"]
+    F --> H
+    G --> H
+    classDef input fill:#e7f0f7,stroke:#0072B2,color:#111111;
+    classDef work fill:#f4f4f4,stroke:#555555,color:#111111;
+    classDef decision fill:#fbeddc,stroke:#A56B00,color:#111111;
+    class A,B input;
+    class C,D,H work;
+    class E,F,G decision;

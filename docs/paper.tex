@@ -9,6 +9,9 @@
 \usepackage{enumitem}
 \usepackage{titlesec}
 \usepackage{flushend}
+\usepackage{graphicx}
+\usepackage{pgf-pie}
+\usetikzlibrary{arrows.meta,positioning}
 \usepackage{xurl}
 \usepackage[hidelinks]{hyperref}
 
@@ -24,6 +27,12 @@
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\source}[1]{\path{#1}}
+\definecolor{posixblue}{HTML}{0072B2}
+\definecolor{posixgreen}{HTML}{009E73}
+\definecolor{posixorange}{HTML}{E69F00}
+\definecolor{posixgray}{HTML}{999999}
+\definecolor{posixred}{HTML}{D55E00}
+\newcommand{\swatch}[1]{\textcolor{#1}{\rule{1.3ex}{1.3ex}}}
 \hypersetup{
   pdftitle={QEMU on Zephyr: Extending the Boundaries of POSIX, Simulation and Virtualization},
   pdfauthor={Chao Liu},
@@ -107,6 +116,43 @@ the pinned implementation, the selected adaptation, the evidence that
 exercises it, and the limits of that evidence. Source inspection establishes
 details such as an explicit \code{ENOSYS} return. Runtime tests establish
 behavior along their actual execution paths.
+
+Figure~\ref{fig:assessment-flow} shows how the inventories, source checks and
+runtime observations feed the assessment. The source catalog and the QEMU
+audit use separate denominators, defined in Section~\ref{sec:inventory}.
+
+\begin{figure*}[t]
+\centering
+% Editable flow source: docs/figures/posix-porting-flow.mmd.
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[x=1mm,y=1mm,
+  box/.style={draw=black!65,fill=black!3,rounded corners=1mm,
+    text width=24mm,minimum height=10mm,align=center,font=\footnotesize},
+  inputbox/.style={box,draw=posixblue,fill=posixblue!9},
+  route/.style={box,draw=posixorange!75!black,fill=posixorange!12},
+  edge/.style={-{Stealth[length=1.8mm]},line width=0.5pt}]
+\node[inputbox] (A) at (0,9) {Zephyr catalog\\393 interfaces};
+\node[inputbox] (B) at (0,-9) {QEMU audit\\50 contracts};
+\node[box] (C) at (34,0) {Inspect providers\\and configuration};
+\node[box] (D) at (68,0) {Native probes\\and guest tests};
+\node[route] (E) at (102,16) {Reuse host API};
+\node[route] (F) at (102,0) {Constrain or adapt};
+\node[route] (G) at (102,-16) {Unavailable};
+\node[box] (H) at (136,0) {Evidence ledger\\sources and limits};
+\draw[edge] (A.east) -- (C.west);
+\draw[edge] (B.east) -- (C.west);
+\draw[edge] (C) -- (D);
+\draw[edge] (D.east) -- (E.west);
+\draw[edge] (D) -- (F);
+\draw[edge] (D.east) -- (G.west);
+\draw[edge] (E.east) -- (H.west);
+\draw[edge] (F) -- (H);
+\draw[edge] (G.east) -- (H.west);
+\end{tikzpicture}}
+\caption{Assessment workflow. Each finding retains its provider,
+configuration, evidence and limitations.}
+\label{fig:assessment-flow}
+\end{figure*}
 
 \subsection{The host POSIX interface}
 
@@ -221,6 +267,106 @@ RTOS. The console adapter is \source{src/qemu/ports/zephyr/console-uart.c}.
 
 \section{Zephyr POSIX compatibility assessment}
 \label{sec:assessment}
+
+\subsection{Inventory method and support distribution}
+\label{sec:inventory}
+
+Two enumerated inventories support Figure~\ref{fig:posix-inventories}.
+The pinned Zephyr option-group document contains 47 API tables with
+431 rows~\cite{zephyr-catalog}. Removing 12 variables or constants leaves
+419 callable rows. Exact-name deduplication yields 393 interfaces, including
+function-like macros. A qualification takes precedence when one name occurs
+in several groups. This gives 289 unqualified \emph{yes} entries, 53 qualified
+entries and 51 unmarked entries. The qualified category contains 51
+undefined-behavior marks and two UTC-only functions.
+
+These are documentation labels. Nine unqualified \emph{yes} entries have
+unconditional \code{ENOSYS} implementations in the inspected Zephyr providers:
+\code{pthread\_atfork}, four priority-ceiling functions, two process-scheduling
+queries, \code{mlockall} and \code{munlockall}. Another 30 catalog entries with
+that behavior already carry qualifications. Conversely, unmarked
+\code{fcntl}, \code{lseek} and \code{times} have source implementations.
+The catalog also delegates parts of ISO C to the selected libc without
+enumerating every function. Its 73.5\% unqualified share describes the table
+entries; standards-wide conformance requires a separate evaluation.
+
+The second inventory is an explicit 50-contract host-interface audit.
+It covers 41 retained interfaces and adaptation contracts plus nine
+process/signal extension contracts. The extension contracts identify
+capabilities beyond the implemented execution profile; they are not all
+requirements of the current Linux boot. Table~\ref{tab:audit-counts}
+enumerates the categories. The CSV ledger identifies every name, source path
+and qualification. Counts weight each reviewed interface equally and make
+no claim to enumerate all QEMU host dependencies.
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\textbf{A. Zephyr documentation ($n=393$)}\par\medskip
+\begin{tikzpicture}[every node/.style={font=\scriptsize,align=center,
+  fill=white,inner sep=1.5pt}]
+\pie[sum=auto,radius=1.7,rotate=90,hide number,text=inside,
+  color={posixblue,posixorange,posixgray}]
+  {289/{\shortstack{289\\73.5\%}},53/{\shortstack{53\\13.5\%}},
+   51/{\shortstack{51\\13.0\%}}}
+\end{tikzpicture}\par
+\small
+\begin{tabular}{@{}lr@{}}
+\swatch{posixblue} Unqualified yes & 289\\
+\swatch{posixorange} Qualified / undefined & 53\\
+\swatch{posixgray} Unmarked & 51
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}
+\centering
+\textbf{B. QEMU host audit ($n=50$)}\par\medskip
+\begin{tikzpicture}[every node/.style={font=\scriptsize,align=center,
+  fill=white,inner sep=1.5pt}]
+\pie[sum=auto,radius=1.7,rotate=90,hide number,text=inside,
+  color={posixblue,posixgreen,posixorange,posixred}]
+  {31/{\shortstack{31\\62.0\%}},8/{\shortstack{8\\16.0\%}},
+   2/{\shortstack{2\\4.0\%}},9/{\shortstack{9\\18.0\%}}}
+\end{tikzpicture}\par
+\small
+\begin{tabular}{@{}lr@{}}
+\swatch{posixblue} Reused host API & 31\\
+\swatch{posixgreen} Port adaptation & 8\\
+\swatch{posixorange} Limited metadata & 2\\
+\swatch{posixred} Unavailable extension & 9
+\end{tabular}
+\end{minipage}
+\caption{Interface counts with separate denominators. Panel A records the
+pinned documentation's labels. Panel B classifies a reviewed set of host
+contracts; reuse and adaptation refer to the selected behavior. These counts
+do not measure standards-wide conformance, runtime test coverage or the
+fraction of all QEMU functionality implemented.}
+\label{fig:posix-inventories}
+\end{figure*}
+
+\begin{table*}[t]
+\caption{The 50 reviewed QEMU host-interface contracts. Complete names and
+source references are preserved in the audit CSV.}
+\label{tab:audit-counts}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.17\textwidth}rY@{}}
+\toprule
+Treatment & Count & Interfaces and supported scope\\
+\midrule
+Reused host API & 31 & 21 pthread interfaces; two clock queries; five descriptor
+operations (open/read/write/close/lseek); uname; flockfile/funlockfile.
+Bindings reuse the selected providers; individual semantics are not exhaustively tested.\\
+Port adaptation & 8 & pread/pwrite use private-descriptor seek/I/O/restore;
+mmap/munmap/mprotect requirements use kernel mappings and QEMU page metadata;
+sigsetjmp/siglongjmp cover no-mask-save calls; exit uses the worker-local target.\\
+Limited metadata & 2 & stat/fstat retain type and size while the observed
+filesystem path omits Unix permission bits.\\
+Unavailable extension & 9 & sigaction, kill, pause, sigpending, sigsuspend,
+sigwait, fork, execve and waitpid. These process/signal contracts are outside
+the implemented profile.\\
+\bottomrule
+\end{tabularx}
+\end{table*}
 
 \subsection{Findings by host requirement}
 
@@ -444,6 +590,57 @@ distinction between host POSIX compatibility and guest Linux ABI support.
 \section{Evaluation method and recorded results}
 \label{sec:evaluation}
 
+\subsection{Direct POSIX provider experiment}
+\label{sec:native-probe}
+
+A standalone Zephyr application calls the native providers with QEMU port
+adapters disabled. It uses Picolibc, POSIX threads/files/signals, memory
+protection enabled, the prepared Zephyr source tree and the read-only VirtIO
+Ext2 disk. It executes on Cortex-A53 at EL2 under SDK QEMU 10.0.2 with TCG.
+The inspected POSIX provider files match the pinned upstream source.
+The experiment and its observations are preserved under
+\source{docs/experiments/posix-native/}.
+
+The configured public headers omit declarations for \code{pread},
+\code{pwrite}, \code{mprotect} and \code{pause}. The probe supplies declarations
+matching the inspected definitions to execute those actual providers. Their
+runtime results do not establish source portability through unmodified public
+headers. Table~\ref{tab:native-probe} records the observed semantics.
+
+\begin{table*}[t]
+\caption{Direct Zephyr/Picolibc observations from the standalone probe.
+POSIX functions and pthread functions report errors through different channels.}
+\label{tab:native-probe}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.27\textwidth}Y@{}}
+\toprule
+Operation & Observed result and interpretation\\
+\midrule
+open/read/lseek/close & Opened the real hello ELF; read its four-byte magic;
+seek and close completed.\\
+stat/fstat & Both reported a regular file of 2496 bytes with zero permission
+bits. Independent debugfs inspection reported inode mode 0755.\\
+pread/pwrite & Returned $-1$ with \code{ENOTSUP} on the regular read-only
+descriptor. Writable mounts were not exercised.\\
+clock queries & Realtime and monotonic queries succeeded. The reported
+realtime resolution was 10\,000\,000 ns under a 100 Hz tick configuration.\\
+pthread creation and conditions & Created and joined a real worker; condition
+notification returned zero; timeout returned \code{ETIMEDOUT} directly with
+errno unchanged.\\
+mprotect; signal control & mprotect, sigaction, kill with signal zero, pause
+and sigwait returned $-1$ with \code{ENOSYS}. Signal-set manipulation succeeded.\\
+pthread\_atfork; getpid & pthread\_atfork returned \code{ENOSYS} directly;
+getpid returned the provider's constant 42.\\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+The target printed its error constants: \code{ENOSYS}=88,
+\code{ENOTSUP}=134 and \code{ETIMEDOUT}=116. The recorded observations establish
+behavior for the stated inputs and provider configuration. Thread fairness,
+signal delivery, writable filesystems and complete POSIX semantics remain
+outside this experiment.
+
 \subsection{Source and environment}
 
 The implementation baseline is repository commit
@@ -619,6 +816,16 @@ file adapter, host header, module source lists and the pinned Zephyr
 implementations cited in Section~\ref{sec:assessment}. Source references and
 validation records were consulted on 9 October 2026.
 
+The inventory extractor uses Docutils to parse the upstream tables and
+preserves excluded rows, duplicate occurrences, source hashes and every
+support cell. The reviewed host ledger is separately versioned. Running
+\source{scripts/posix_figures.py} with the dependencies in
+\source{docs/requirements-figures.txt} regenerates the CSV inventory, count
+manifest and Matplotlib SVG/PNG plots. The Mermaid flow source is
+\source{docs/figures/posix-porting-flow.mmd}; the manuscript embeds the
+corresponding vector rendering and numerical chart data. Figure preparation
+uses the Scientific Visualization workflow~\cite{scientific-skills}.
+
 \begin{thebibliography}{16}
 \small
 \setlength{\itemsep}{3pt}
@@ -698,6 +905,17 @@ QEMU Project,
 \href{https://github.com/processmission/qemu-on-zephyr}{QEMU on Zephyr},
 source and validation artifact.
 Implementation baseline: \source{2b1161806afe14fe57dec97234f37aac1ea84e5e}.
+
+\bibitem{zephyr-catalog}
+Zephyr Project,
+\href{https://github.com/zephyrproject-rtos/zephyr/blob/ba25413e5b6b2661a71db24888f6b89274f1480d/doc/services/portability/posix/option_groups/index.rst}{``POSIX Option and Option Group Details,''}
+revision \source{ba25413e5b6b2661a71db24888f6b89274f1480d}.
+
+\bibitem{scientific-skills}
+T. Kassis, V. Agarwal, Y. He, D. Patel and A.~M. Brueckner,
+``Scientific Agent Skills: A Library of Procedural Knowledge for Research
+Agents,'' 2026.
+\href{https://doi.org/10.48550/arXiv.2609.00065}{arXiv:2609.00065}.
 
 \end{thebibliography}
 \end{document}
