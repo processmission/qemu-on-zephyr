@@ -1,4 +1,4 @@
-# Linux desktop
+# Linux desktop and README recordings
 
 The desktop profile runs Alpine Linux AArch64 with Xorg, the fbdev driver,
 JWM, xterm and xclock. The [Alpine minimal filesystem](https://alpinelinux.org/downloads/)
@@ -70,3 +70,43 @@ the desktop profile provides a 160 MiB host libc heap for loading the images.
 The Zephyr Ext2 implementation accepts one block group. Managed disks use
 4096-byte blocks and remain at most 128 MiB. The image builder rejects file
 contents above 112 MiB, leaving space for filesystem metadata.
+
+## Record the demonstrations
+
+Install the recording dependencies in the project environment:
+
+```sh
+.venv/bin/python -m pip install -r requirements-demo.txt
+make record-demos
+```
+
+The recorder boots both Zephyr profiles, executes the demonstration commands,
+checks the guest results, and writes:
+
+| File | Captured content |
+| --- | --- |
+| `docs/images/system-desktop.gif` | QEMU display frames while Linux runs Xorg and JWM |
+| `docs/images/linux-user.gif` | Actual Zephyr UART output during TCG program execution |
+
+Startup console output plays at 12× speed; `--boot-speed` changes that multiplier.
+The desktop and program demonstrations play at normal speed with five captured
+frames per second. Once JWM and xterm are visible, the desktop recording shows
+terminal commands, the desktop menu, and window dragging. QMP supplies desktop
+screenshots; pyte interprets the terminal's ANSI
+output and Pillow encodes the GIFs. No generated guest output is inserted.
+
+Serial logs, asciicast streams, final PNG frames, invocation details and GIF
+checksums are saved under `build/demo-recordings/`. The desktop check verifies
+Xorg, JWM, xterm and `/dev/fb0`, then powers off Linux and checks the Zephyr
+status command. The user check verifies program arguments, environment
+variables and successive executions.
+
+Individual recordings can reuse existing firmware:
+
+```sh
+.venv/bin/python scripts/record_demos.py --mode desktop --no-build
+.venv/bin/python scripts/record_demos.py --mode user --no-build
+```
+
+The recorder uses Menlo on macOS or DejaVu Sans Mono on Linux. `--font` accepts
+another monospace TrueType font, and `--output` selects another output directory.

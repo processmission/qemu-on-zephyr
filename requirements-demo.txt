@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+pexpect>=4.9,<5
+Pillow>=12,<13
+pyte>=0.8.2,<0.9
+qemu.qmp>=0.0.3,<0.1

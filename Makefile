@@ -34,6 +34,7 @@ help:
 	@echo 'make test-arch     EL1/EL2, FPU and executor regressions through west twister'
 	@echo 'make test-tools    Workspace setup and configuration tests'
 	@echo 'make desktop       Build and run Alpine Linux with Xorg and JWM (requires Docker)'
+	@echo 'make record-demos  Record system desktop and user-mode GIFs for the README'
 	@echo 'make clean         Delete generated builds, retaining SDK, venv and assets'
 	@echo 'QEMU_ARGS="-M help", "-accel help" or "-cpu help" lists supported selections'
 	@echo 'ACCEL and CPU provide defaults for options omitted from QEMU_ARGS'
@@ -61,9 +62,12 @@ test-glib:
 test-tools: | check-env
 	"$(PYTHON)" -m unittest discover -s tests/tools -v
 
-.PHONY: desktop-assets desktop
+.PHONY: desktop-assets desktop record-demos
 desktop-assets: | check-env
 	"$(PYTHON)" scripts/desktop.py
 
 desktop: desktop-assets
 	$(MAKE) run QEMU_DESKTOP=1
+
+record-demos: desktop-assets
+	"$(PYTHON)" scripts/record_demos.py
