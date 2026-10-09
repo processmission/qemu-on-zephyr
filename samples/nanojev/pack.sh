@@ -1,6 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: Apache-2.0
 set -eu
+output_owner=$(stat -c '%u:%g' /output)
+trap 'chown -R "$output_owner" /output' EXIT
 mkdir -p /bootfs/bin /bootfs/dev /bootfs/proc /bootfs/sys /bootfs/lower /bootfs/rw /bootfs/newroot /output/boot
 cp /bin/busybox.static /bootfs/bin/busybox
 cp /boot-init /bootfs/init
