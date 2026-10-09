@@ -1,5 +1,8 @@
 # Development
 
+Usage and external-program updates are documented in the
+[English guidelines](docs/guidelines.md) and [Chinese guidelines](docs/guidelines.zh-CN.md).
+
 Keep changes to the upstream repositories separate from new module code.
 
 * Edit new implementation files under `src/qemu/` or `src/zephyr/`.
@@ -38,7 +41,7 @@ against `build/sources/zephyr` and add the **repository root** to
 west build -b qemu_cortex_a53 -d build/custom apps/qemu_linux
 ```
 
-`CONFIG_QEMU` enables the module. The Linux profile additionally requires
+`CONFIG_QEMU` enables the module. The native system profile additionally requires
 `CONFIG_ARM64_EL2`, `CONFIG_ARM64_HYPERVISOR` and `CONFIG_QEMU_ZEPHYR_ACCEL`.
 The full sample configuration is in `apps/qemu_linux/prj.conf`.
 

@@ -218,3 +218,18 @@ The same generated ELF executed directly in Ubuntu 24.04 AArch64. Disk
 checks verified its ELF architecture, static linkage, cache reuse, Ext2
 contents and explicit source/disk overrides. User syscall acceptance,
 system Linux boot and the device, filesystem and GLib regressions passed.
+
+## External program updates
+
+A named user disk was first populated with the SDK-built hello under
+`/images/myapp`. The source binary was replaced with the checked-in Linux
+ABI regression program and the disk regenerated while outer QEMU remained
+running. The existing session continued to execute hello, including after
+`kernel reboot cold`. After outer QEMU was exited and started again, the
+same path executed the ABI program, printed its success marker and returned
+the expected status 7. The source directory also supplied the regression
+program's real filesystem input.
+
+This check ran on 2026-10-09 with implementation `2b11618`. Its logs are retained
+locally in `.docs-restructure/update-old-session.log` and
+`.docs-restructure/update-new-session.log`, excluded through `.git/info/exclude`.

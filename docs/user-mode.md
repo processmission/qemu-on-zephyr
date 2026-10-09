@@ -1,5 +1,9 @@
 # Linux AArch64 processes on Zephyr
 
+The [usage guidelines](guidelines.md#external-programs-and-updates) describe
+how to supply external programs and activate updated files. A
+[Chinese version](guidelines.zh-CN.md#外部程序与更新) is also available.
+
 Build the user emulation firmware and wait at the Zephyr shell:
 
 ```sh
