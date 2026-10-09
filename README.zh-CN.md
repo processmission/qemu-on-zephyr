@@ -1,15 +1,62 @@
-# QEMU on Zephyr
+<h1 align="center">QEMU on Zephyr</h1>
 
-[![Build and boot](https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml/badge.svg)](https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml)
+<p align="center">
+  <strong>在 Zephyr 内运行 ARM64 Linux。</strong><br>
+  Linux 桌面 · 固件 · 静态 Linux 程序
+</p>
 
-在 Zephyr 内运行 ARM64 Linux 内核、固件和静态 Linux 程序。
-system 模式使用 `zephyr` EL2 后端或 QEMU TCG；user 模式使用 TCG，
-并将 Linux syscall 转换为 Zephyr 操作。
+<p align="center">
+  <a href="https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml"><img src="https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml/badge.svg" alt="构建与启动 CI"></a>
+  <a href="docs/backends.md"><img src="https://img.shields.io/badge/architecture-AArch64-315879?style=flat-square" alt="AArch64 架构"></a>
+  <a href="docs/setup.md"><img src="https://img.shields.io/badge/Zephyr_SDK-1.0.1-7A51C2?style=flat-square" alt="Zephyr SDK 1.0.1"></a>
+  <a href="docs/validation.md"><img src="https://img.shields.io/badge/status-experimental-d29922?style=flat-square" alt="实验性项目"></a>
+</p>
 
-当前项目是实验性的 AArch64 集成，已在外层 QEMU `virt` 平台上验证。
-物理开发板和生产级隔离保证仍未验证。
+<p align="center">
+  <a href="README.md">English</a> · <strong>简体中文</strong>
+</p>
 
-[English](README.md) · [中文使用指南](docs/guidelines.zh-CN.md) · [English guidelines](docs/guidelines.md) · [英文论文](docs/paper.md)
+<p align="center">
+  <a href="#运行演示">运行演示</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#运行验证">运行验证</a> ·
+  <a href="#文档">文档</a>
+</p>
+
+---
+
+全系统模式通过 `zephyr` EL2 后端或 QEMU TCG 运行 Linux 内核和固件。
+用户态模式使用 TCG，并将 Linux 系统调用转换为 Zephyr 操作。
+
+> **实验性的 AArch64 集成。** 已在外层 QEMU `virt` 平台上验证。
+> 物理开发板和生产级隔离保证仍未验证。
+
+## 运行演示
+
+### Alpine Linux 桌面
+
+在 Zephyr 内运行 Alpine Linux、Xorg 和 JWM，使用 `zephyr` EL2 后端
+和 256 MiB 客户机内存。动图展示终端命令、桌面菜单和窗口拖动。
+
+<p align="center">
+  <a href="docs/images/system-desktop.gif"><img src="docs/images/system-desktop.gif" width="800" alt="在 Zephyr 内运行 Alpine Linux 桌面，展示启动、终端命令、菜单和窗口拖动"></a><br>
+  <sub>800 × 600 显示 · 实际运行录制 · 启动日志 12 倍速 · 桌面操作正常速度</sub>
+</p>
+
+<p align="center">
+  <a href="#alpine-桌面">启动桌面</a> ·
+  <a href="docs/desktop.md#record-the-demonstrations">重新录制动图</a>
+</p>
+
+### Linux 用户态程序
+
+执行静态 AArch64 Linux 程序，传入参数和环境变量，程序退出后返回
+Zephyr 命令行，继续执行其他程序。
+
+<p align="center">
+  <a href="docs/images/linux-user.gif"><img src="docs/images/linux-user.gif" width="800" alt="在 Zephyr 内通过 TCG 执行 AArch64 Linux 程序，展示参数和环境变量"></a><br>
+  <sub>AArch64 TCG · 真实串口输出 · 启动日志 12 倍速 · 程序执行正常速度</sub>
+</p>
 
 ## 快速开始
 
@@ -21,14 +68,41 @@ git clone https://github.com/processmission/qemu-on-zephyr.git
 cd qemu-on-zephyr
 bash scripts/install-host-deps.sh
 make setup
+```
+
+安装流程准备固定版本的源码、Python 工具、Zephyr SDK 1.0.1 和客户机镜像。
+完成后，可以启动桌面、Linux 控制台或 Linux 用户态程序：
+
+### Alpine 桌面
+
+启动能够执行 `linux/arm64` 容器的 Docker 服务，然后运行：
+
+```sh
+make desktop
+```
+
+QEMU 窗口显示桌面，通过 Linux 串口命令行中的 `xdotool` 操作桌面。
+操作步骤见[桌面配置与控制](docs/desktop.md)。
+
+### Linux 控制台
+
+```sh
 make run
 ```
 
-安装流程准备固定版本的源码、Python 工具、Zephyr SDK 1.0.1 和 guest 镜像。
-`make run` 默认自动启动 Linux。使用 `QEMU_SHELL=1` 时，Zephyr 等待手动
-输入启动命令。
+Linux 自动启动。使用 `make run QEMU_SHELL=1` 可以进入 Zephyr 命令行，
+手动输入启动命令。
 
-## Linux user 模式
+### 静态 Linux 程序
+
+默认用户态磁盘包含使用 SDK 编译的静态 Linux ELF：
+
+```sh
+make run QEMU_MODE=user QEMU_ARGS='/images/hello arg1'
+```
+
+<details>
+<summary>在 Zephyr 命令行中启动用户态程序</summary>
 
 在开发机执行：
 
@@ -36,17 +110,13 @@ make run
 make run QEMU_MODE=user QEMU_SHELL=1
 ```
 
-默认 user 磁盘包含使用 SDK 编译的静态 Linux ELF。在 `zephyr>` 提示符下执行：
+在 `zephyr>` 提示符下执行：
 
 ```text
 qemu-aarch64 /images/hello arg1
 ```
 
-需要自动执行时：
-
-```sh
-make run QEMU_MODE=user QEMU_ARGS='/images/hello arg1'
-```
+</details>
 
 ## 外部程序
 
@@ -57,17 +127,35 @@ make run QEMU_MODE=user QEMU_ARGS='/images/hello arg1'
 
 ## 运行与退出
 
-- **Ctrl-]** 停止当前 guest 或程序，返回 Zephyr。
-- **Ctrl-a，再按 x** 退出外层 QEMU。
-- 再次启动 system VM 需要执行 `kernel reboot cold`；user 程序可以在同一次
-  Zephyr 启动中连续运行。
+| 操作 | 结果 |
+| --- | --- |
+| <kbd>Ctrl</kbd> + <kbd>]</kbd> | 停止当前客户机或程序，返回 Zephyr |
+| 在 Linux 中执行 `poweroff -f` | 关闭 Linux，返回 Zephyr |
+| 在 `zephyr>` 执行 `kernel reboot cold` | 重启 Zephyr，准备启动另一个系统虚拟机 |
+| <kbd>Ctrl</kbd> + <kbd>a</kbd>，再按 <kbd>x</kbd> | 退出外层 QEMU |
 
-使用 `make check` 验证 system 模式，使用 `make check-user` 验证 user 模式。
-[使用指南](docs/guidelines.zh-CN.md)包含参数、固件示例、兼容范围和常见问题。
+用户态程序可以在同一次 Zephyr 启动中连续执行。
 
-## 开发
+## 运行验证
 
-源码和补丁维护见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-[英文论文](docs/paper.md)讨论 QEMU 的移植过程和 Zephyr POSIX 兼容性评估，
-[validation.md](docs/validation.md)记录运行证据。
-各组件保留原有许可证，详见 [LICENSE.md](LICENSE.md)。
+| 命令 | 验证内容 |
+| --- | --- |
+| `make check` | Linux 启动、控制台、定时器中断和主机线程调度 |
+| `make check-user` | Linux 程序执行、系统调用、内存和连续启动 |
+| `make check-desktop` | Alpine 桌面启动、交互、显示画面和客户机关机 |
+
+桌面验证需要 Docker 和 `requirements-demo.txt` 中的依赖。
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [中文使用指南](docs/guidelines.zh-CN.md) · [English guidelines](docs/guidelines.md) | 参数、固件、外部程序与常见问题 |
+| [环境配置](docs/setup.md) | 依赖、SDK、代理和离线配置 |
+| [桌面与动图录制](docs/desktop.md) | Alpine 镜像、桌面控制和 GIF 录制 |
+| [架构说明](docs/architecture.md) · [执行后端](docs/backends.md) | QEMU 集成、EL2 执行和 TCG |
+| [Linux 用户态接口](docs/user-mode.md) | 系统调用与进程内存 |
+| [英文论文](docs/paper.md) · [验证记录](docs/validation.md) | 移植分析与运行证据 |
+| [参与开发](CONTRIBUTING.md) | 源码修改、补丁维护和开发检查 |
+
+各组件保留原有许可证，详见[许可证与源码来源](LICENSE.md)。
