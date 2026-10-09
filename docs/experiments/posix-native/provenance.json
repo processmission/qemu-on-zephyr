@@ -1,0 +1,50 @@
+{
+  "observation_date": "2026-10-09",
+  "zephyr_revision": "ba25413e5b6b2661a71db24888f6b89274f1480d",
+  "prepared_sources_signature": "843f12b0c649a4509dae7af564ef5399daa0121502462824bc3af3dc3967bf20",
+  "build_command": [
+    "$PROJECT_ROOT/.venv/bin/python", "-m", "west", "build", "-b", "qemu_cortex_a53",
+    "-d", "$PROJECT_ROOT/build/posix-native", "$PROJECT_ROOT/docs/experiments/posix-native", "--",
+    "-DPython3_EXECUTABLE=$PROJECT_ROOT/.venv/bin/python",
+    "-DZEPHYR_BASE=$PROJECT_ROOT/build/sources/zephyr",
+    "-DZEPHYR_SDK_INSTALL_DIR=$ZEPHYR_SDK_INSTALL_DIR",
+    "-DZEPHYR_MODULES=$PROJECT_ROOT", "-DBUILD_VERSION=posix-native-probe"
+  ],
+  "runtime_command": [
+    "$ZEPHYR_SDK_INSTALL_DIR/hosttools/usr/bin/qemu-system-aarch64",
+    "-machine", "virt,virtualization=on,secure=off,gic-version=3", "-accel", "tcg",
+    "-cpu", "cortex-a53", "-m", "512M", "-smp", "1", "-display", "none", "-monitor", "none",
+    "-chardev", "stdio,id=console,mux=on,signal=off", "-serial", "chardev:console",
+    "-global", "virtio-mmio.force-legacy=false",
+    "-drive", "if=none,id=guestfiles,file=$PROJECT_ROOT/build/user-disk.img,format=raw,readonly=on",
+    "-device", "virtio-blk-device,bus=virtio-mmio-bus.4,drive=guestfiles",
+    "-kernel", "$PROJECT_ROOT/build/posix-native/zephyr/zephyr.elf"
+  ],
+  "qemu_version": "QEMU emulator version 10.0.2",
+  "compiler_version": "aarch64-zephyr-elf-gcc (Zephyr SDK 1.0.1) 14.3.0",
+  "qemu_exit_status": 0,
+  "sha256": {
+    "docs/experiments/posix-native/main.c": "284957316e8e3663eac4795ddcc28c3a52dac38fa1bc11f02814856f901b0d54",
+    "docs/experiments/posix-native/prj.conf": "9100792bd974666e44d39134f0c113ffe181b11f78e58e58de6b2d6faf8fadbc",
+    "docs/experiments/posix-native/CMakeLists.txt": "e0a55f6f1a12055f108aa4655d3a7eda1ee26990fcc9e77f02f0844a7473caaf",
+    "docs/experiments/posix-native/app.overlay": "3d18288d9be493f89b9b0efaffdde02ef5e5c528c7db04a2d6cc42f8d0dc7798",
+    "scripts/posix_probe.py": "90dcb5411175afb7f1edab288fc29477c03a346060eb3b0a249fafd4fd36f643",
+    "build/posix-native/zephyr/.config": "540541f9bd40e5cdb0c804db4f56cd886e37ccd740340161c11ee416898f0704",
+    "build/posix-native/zephyr/zephyr.elf": "cee8e6570f65ff44ed4a55cd7b2de7a17c6c0098e69745741c35e86e4589a862",
+    "build/user-disk.img": "70255d20303d70ebb22a06209c6f3708eb1760c9d33692cb77f438c38fb94c8e",
+    "build/sources/zephyr/subsys/portability/posix/options/device_io.c": "0b721fd55926a11aa5ca7b1d694024effe3d1a839a15d7e03aca0643a94218e0",
+    "build/sources/zephyr/subsys/portability/posix/options/fd_mgmt.c": "f1a6b012ee0e06d9619c7bcb476da08670a99e8fc0672c84962e145883690aaf",
+    "build/sources/zephyr/subsys/portability/posix/options/fs.c": "4f815fb34f0c785b67ac11cadbd8ee754f13900d98793ce90127f372c9c718b5",
+    "build/sources/zephyr/subsys/portability/posix/options/clock.c": "f492cd02aeae8683b991770b996758fd91b7757dcfb89c8f4092da0e149e836d",
+    "build/sources/zephyr/subsys/portability/posix/options/cond.c": "50951f79ccbb3eb56dcadf8bf1d8e213fa4a1808514d8a6157a3ed5b8d177f6c",
+    "build/sources/zephyr/subsys/portability/posix/options/mutex.c": "15b65b718c0843673c865eea1d1c3d406c8a25138deab2fc34e5bd9f5fb66cf2",
+    "build/sources/zephyr/subsys/portability/posix/options/pthread.c": "b56f195cca8571b92434b879ceedf4f4267ce6c96f4510b444062e663b1fef37",
+    "build/sources/zephyr/subsys/portability/posix/options/signal.c": "0883dcecadb96801f7db1fe42f4ef69a6b84de9e28e74250f5ca6b362deeb068",
+    "build/sources/zephyr/subsys/portability/posix/options/mprotect.c": "e5242cd966f5a9185799126296a06ac415a86a5c2821bc60298e501a454cc6b5",
+    "build/sources/zephyr/subsys/portability/posix/options/multi_process.c": "7b1d2a1a7994e030900d5fa40f6a9adbc0e9d021d902ec391140fb581e7cebae",
+    "build/sources/zephyr/lib/os/zvfs/zvfs_fdtable.c": "486f6330d9c38997e10a7e4ea51b39a96a9cf1d711ce0810138b3a9cdc90e506",
+    "build/sources/zephyr/include/zephyr/posix/sys/mman.h": "19ef4f45f21b0710656496522490618c7aa81c1bfa0f9c6b25b4409e48210af7",
+    "build/sources/zephyr/include/zephyr/posix/unistd.h": "663e3c2150abafe76e85701d74c36d900d5a8f0afbdc030229345d33250b6a6d"
+  },
+  "disk_inode_inspection": "debugfs 1.47.4 (6-Mar-2025)\nInode: 12   Type: regular    Mode:  0755   Flags: 0x0\nGeneration: 0    Version: 0x00000000\nUser:   501   Group:    20   Size: 2496\nFile ACL: 0"
+}

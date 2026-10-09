@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+&{/psci} {
+    method = "smc";
+};
+
+&sram0 {
+    reg = <0x0 0x40000000 0x0 DT_SIZE_M(512)>;
+};
+
+&virtio_mmio4 {
+    status = "okay";
+    guest_files: virtio-blk {
+        compatible = "virtio,blk";
+        disk-name = "GUESTFILES";
+        status = "okay";
+    };
+};
