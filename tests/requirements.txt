@@ -5,6 +5,7 @@ anytree
 colorama
 junitparser>=3.0.0
 natsort
+pexpect>=4.9,<5
 ply>=3.10
 pytest>=9.0.3
 python-dotenv>=1.2.2
