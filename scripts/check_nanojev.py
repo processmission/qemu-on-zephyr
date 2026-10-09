@@ -7,6 +7,7 @@ import json
 import math
 from pathlib import Path
 import re
+import subprocess
 import time
 
 import pexpect
@@ -32,6 +33,9 @@ async def validate(no_build: bool, steps: int, timeout: int, output: Path, boot_
     command = qemu_command(config=config)
     command[command.index("-display") + 1] = "none"
     command += ["-qmp", f"unix:{socket},server=on,wait=off"]
+    version = subprocess.check_output([command[0], "--version"], text=True).splitlines()[0]
+    (output / "runtime.json").write_text(json.dumps({"qemu": version, "command": command}, indent=2) + "\n")
+    print(f"Outer QEMU: {version}", flush=True)
     qmp = QMPClient("nanojev")
     terminal = TerminalRecording(output, "serial", find_font(None), desktop=True)
     video = DemoVideo(output)
@@ -96,7 +100,10 @@ async def validate(no_build: bool, steps: int, timeout: int, output: Path, boot_
                        '-kernel /images/Image -initrd /images/initramfs.cpio.gz '
                        '-append "console=ttyAMA0 rdinit=/init rootfstype=ramfs panic=-1"')
         await expect("DESKTOP_READY", 600)
+        print("NanoJev Linux desktop ready; loading the CPU model", flush=True)
         await expect("NANOJEV_READY", timeout)
+        ready_details = await asyncio.to_thread(child.readline)
+        print("NANOJEV_READY" + ready_details.rstrip(), flush=True)
         await shell('xdotool search --onlyvisible --name "NanoJev CPU" windowactivate --sync')
         child.sendline(f"xdotool key F{maze_size}")
         await expect(f"NANOJEV_MAZE_READY size={maze_size}")
@@ -112,7 +119,21 @@ async def validate(no_build: bool, steps: int, timeout: int, output: Path, boot_
                 await capture(f"step-{index + 1:02d}")
         else:
             child.sendline('xdotool key space')
-            await expect("NANOJEV_FINISHED", timeout)
+            deadline = time.monotonic() + timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("NanoJev did not complete the maze within the runtime limit")
+                outcome = await asyncio.to_thread(
+                    child.expect,
+                    [r"NANOJEV_(?:INFERENCE|STEP|FINISHED) [^\r\n]*\r*\n",
+                     "NANOJEV_FAILED", "Kernel panic", "FATAL ERROR"], timeout=remaining)
+                if outcome:
+                    raise RuntimeError(f"NanoJev guest failed; inspect {output / 'serial.log'}")
+                progress = child.match.group(0).rstrip()
+                print(progress, flush=True)
+                if progress.startswith("NANOJEV_FINISHED "):
+                    break
             await shell("sleep 3")
             await capture("complete")
         recording = False
