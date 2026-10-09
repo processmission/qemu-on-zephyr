@@ -18,14 +18,14 @@ jobs:
       JOBS: 4
       QEMU_SYSTEM_AARCH64: /usr/bin/qemu-system-aarch64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Install host and desktop validation dependencies
         run: |
           make host-deps
           sudo apt-get install -y --no-install-recommends \
             qemu-system-arm ipxe-qemu seabios fonts-dejavu-core
           docker info
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6.1.0
         with:
           path: |
             .tools/zephyr-sdk-1.0.1
@@ -41,7 +41,7 @@ jobs:
       - name: Boot Alpine Linux and verify desktop interaction
         run: make check-desktop
       - name: Upload desktop validation artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: alpine-desktop-validation
@@ -69,10 +69,10 @@ jobs:
     env:
       QEMU_ARGS: -M zephyr-virt -accel ${{ matrix.accel }} -cpu ${{ matrix.cpu }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Install host dependencies
         run: make host-deps
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6.1.0
         with:
           path: |
             .tools/zephyr-sdk-1.0.1
@@ -99,7 +99,7 @@ jobs:
         run: |
           make check QEMU_SHELL=1
           make check-user QEMU_ARGS="-cpu ${{ matrix.cpu }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: test-logs-${{ matrix.os }}-${{ matrix.accel }}-${{ matrix.cpu }}
