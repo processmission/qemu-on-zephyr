@@ -22,7 +22,8 @@ jobs:
       - name: Install host and desktop validation dependencies
         run: |
           make host-deps
-          sudo apt-get install -y --no-install-recommends qemu-system-arm fonts-dejavu-core
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-arm ipxe-qemu seabios fonts-dejavu-core
           docker info
       - uses: actions/cache@v4
         with:
