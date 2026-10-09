@@ -16,6 +16,7 @@ extern char zhv_loop_start[], zhv_loop_end[], zhv_fp_start[], zhv_fp_end[];
 extern char zhv_timer_start[], zhv_timer_end[];
 extern char zhv_timer_busy_start[], zhv_timer_busy_end[];
 extern char zhv_irq_start[], zhv_irq_vectors[], zhv_irq_end[];
+extern char zhv_fiq_start[], zhv_fiq_vectors[], zhv_fiq_end[];
 extern char zhv_rom_start[], zhv_rom_end[];
 extern int zhv_host_fp_run(struct zhv_vcpu *vcpu, const struct zhv_run_input *input,
 			   struct zhv_exit *exit, uint64_t result[10]);
@@ -413,5 +414,53 @@ ZTEST(zhv, test_rom_mapping_and_write_protection)
 	zassert_equal((stopped.esr >> 26) & 63U, 0x20U);
 	zassert_equal(stopped.esr & 63U, 14U);
 }
+
+ZTEST(zhv, test_virtual_fiq)
+{
+	state.vbar_el1 = ram.guest_ipa + (zhv_fiq_vectors - zhv_fiq_start);
+	load_probe(zhv_fiq_start, zhv_fiq_end);
+	input.fiq = true;
+	run_to(ZHV_EXIT_SYSREG);
+	zassert_true(stopped.u.sysreg.read);
+	zassert_equal(stopped.u.sysreg.encoding, 0xc640U);
+	input.fiq = false;
+	complete(37U);
+	run_to(ZHV_EXIT_SYSREG);
+	zassert_false(stopped.u.sysreg.read);
+	zassert_equal(stopped.u.sysreg.encoding, 0xc641U);
+	zassert_equal(stopped.u.sysreg.value, 37U);
+	complete(0U);
+	run_to(ZHV_EXIT_HVC);
+	zassert_equal(stopped.u.call.immediate, 0x141U);
+}
+
+#ifdef CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS
+ZTEST(zhv, test_virtual_gic_context_isolation)
+{
+	uint64_t old_lr = read_sysreg(ich_lr2_el2);
+	uint64_t old_ap = read_sysreg(ich_ap0r0_el2);
+	uint64_t pending = BIT64(62) | BIT64(60) | 45U;
+
+	write_sysreg(pending, ich_lr2_el2);
+	state.vbar_el1 = ram.guest_ipa + (zhv_irq_vectors - zhv_irq_start);
+	load_probe(zhv_irq_start, zhv_irq_end);
+	run_to(ZHV_EXIT_WFI);
+	uint64_t returned_lr = read_sysreg(ich_lr2_el2);
+
+	write_sysreg(old_lr, ich_lr2_el2);
+	zassert_equal(returned_lr, pending);
+	complete(0U);
+
+	write_sysreg(1U, ich_ap0r0_el2);
+	load_probe(zhv_irq_start, zhv_irq_end);
+	input.irq = true;
+	run_to(ZHV_EXIT_SYSREG);
+	uint64_t returned_ap = read_sysreg(ich_ap0r0_el2);
+
+	write_sysreg(old_ap, ich_ap0r0_el2);
+	zassert_equal(returned_ap, 1U);
+	zassert_equal(stopped.u.sysreg.encoding, 0xc660U);
+}
+#endif
 
 ZTEST_SUITE(zhv, NULL, NULL, before, after, NULL);

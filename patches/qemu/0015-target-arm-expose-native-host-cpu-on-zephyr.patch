@@ -1,0 +1,50 @@
+From 4996b9653513a6c4065012ed4c4cddfd0f1a67d3 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu@processmission.com>
+Date: Sat, 10 Oct 2026 00:21:09 +0800
+Subject: [PATCH] target/arm: expose the native host CPU model to Zephyr
+
+Register the host CPU model for the Zephyr accelerator and initialize
+its supported ARMv8 subset from the execution host.
+
+Signed-off-by: Chao Liu <chao.liu@processmission.com>
+---
+ target/arm/cpu64.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/target/arm/cpu64.c b/target/arm/cpu64.c
+index d37bc81..4584293 100644
+--- a/target/arm/cpu64.c
++++ b/target/arm/cpu64.c
+@@ -30,6 +30,9 @@
+ #include "system/hw_accel.h"
+ #include "system/qtest.h"
+ #include "system/tcg.h"
++#ifdef CONFIG_QEMU_ZEPHYR_ACCEL
++#include "system/zephyr.h"
++#endif
+ #include "kvm_arm.h"
+ #include "hvf_arm.h"
+ #include "whpx_arm.h"
+@@ -811,6 +814,9 @@ void aarch64_host_initfn(Object *obj)
+     hvf_arm_set_cpu_features_from_host(cpu);
+ #elif defined(CONFIG_WHPX)
+     whpx_arm_set_cpu_features_from_host(cpu);
++#elif defined(CONFIG_QEMU_ZEPHYR_ACCEL)
++    aarch64_a53_initfn(obj);
++    zephyr_arm_set_cpu_features_from_host(cpu);
+ #else
+     g_assert_not_reached();
+ #endif
+@@ -884,7 +890,8 @@ static const ARMCPUInfo aarch64_cpus[] = {
+     { .name = "cortex-a72",         .initfn = aarch64_a72_initfn },
+     { .name = "cortex-a57",         .initfn = aarch64_a57_initfn },
+     { .name = "cortex-a53",         .initfn = aarch64_a53_initfn },
+-#if defined(CONFIG_KVM) || defined(CONFIG_HVF) || defined(CONFIG_WHPX)
++#if defined(CONFIG_KVM) || defined(CONFIG_HVF) || defined(CONFIG_WHPX) || \
++    defined(CONFIG_QEMU_ZEPHYR_ACCEL)
+     { .name = "host",               .initfn = aarch64_host_initfn },
+ #endif
+ };
+-- 
+2.56.0
+

@@ -169,6 +169,25 @@ zhv_irq_handler:
 	b	.
 zhv_irq_end:
 
+GTEXT(zhv_fiq_start)
+GTEXT(zhv_fiq_vectors)
+GTEXT(zhv_fiq_end)
+SECTION_FUNC(TEXT, zhv_fiq_start)
+	msr	daifclr, #1
+	wfi
+	b	.
+	.balign 2048
+zhv_fiq_vectors:
+	.space 0x300
+	b	zhv_fiq_handler
+	.space 0x800 - 0x304
+zhv_fiq_handler:
+	mrs	x0, icc_iar0_el1
+	msr	icc_eoir0_el1, x0
+	hvc	#0x141
+	b	.
+zhv_fiq_end:
+
 GTEXT(zhv_rom_start)
 GTEXT(zhv_rom_end)
 SECTION_FUNC(TEXT, zhv_rom_start)

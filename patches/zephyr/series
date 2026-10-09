@@ -6,3 +6,4 @@
 0006-arch-arm64-integrate-the-native-guest-executor.patch
 0007-fs-ext2-preserve-read-only-inode-synchronization.patch
 0008-arch-arm64-place-interrupt-metadata-at-va-limit.patch
+0009-arm64-read-counter-frequency-at-runtime.patch

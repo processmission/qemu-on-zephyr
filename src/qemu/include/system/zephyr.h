@@ -15,6 +15,8 @@
 
 struct zhv_ram;
 const struct zhv_ram *zephyr_guest_rom(void);
+struct ArchCPU;
+void zephyr_arm_set_cpu_features_from_host(struct ArchCPU *cpu);
 
 bool zephyr_enabled(void);
 

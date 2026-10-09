@@ -387,6 +387,39 @@ static void zephyr_arm_cpu_instance_init(CPUState *cs)
     FIELD_DP64_IDREG(&cpu->isar, ID_AA64PFR0, EL1, 1);
 }
 
+void zephyr_arm_set_cpu_features_from_host(ARMCPU *cpu)
+{
+    uint64_t midr, revidr, isar0, pfr0, mmfr0, dczid, ctr;
+
+    __asm__ volatile("mrs %0, midr_el1" : "=r"(midr));
+    __asm__ volatile("mrs %0, revidr_el1" : "=r"(revidr));
+    __asm__ volatile("mrs %0, id_aa64isar0_el1" : "=r"(isar0));
+    __asm__ volatile("mrs %0, id_aa64pfr0_el1" : "=r"(pfr0));
+    __asm__ volatile("mrs %0, id_aa64mmfr0_el1" : "=r"(mmfr0));
+    __asm__ volatile("mrs %0, dczid_el0" : "=r"(dczid));
+    __asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr));
+    if (FIELD_EX64(pfr0, ID_AA64PFR0, FP) == 15 ||
+        FIELD_EX64(pfr0, ID_AA64PFR0, ADVSIMD) == 15) {
+        error_report("zephyr host CPU requires AArch64 FP and Advanced SIMD");
+        exit(1);
+    }
+    /* Keep the ARMv8 baseline whose complete state the executor preserves. */
+    cpu->midr = midr;
+    cpu->revidr = revidr;
+    cpu->dtb_compatible = "arm,arm-v8";
+    SET_IDREG(&cpu->isar, ID_AA64MMFR0, mmfr0 & UINT32_MAX);
+    FIELD_DP64_IDREG(&cpu->isar, ID_AA64ISAR0, AES,
+                    MIN(FIELD_EX64(isar0, ID_AA64ISAR0, AES), 2));
+    FIELD_DP64_IDREG(&cpu->isar, ID_AA64ISAR0, SHA1,
+                    MIN(FIELD_EX64(isar0, ID_AA64ISAR0, SHA1), 1));
+    FIELD_DP64_IDREG(&cpu->isar, ID_AA64ISAR0, SHA2,
+                    MIN(FIELD_EX64(isar0, ID_AA64ISAR0, SHA2), 1));
+    FIELD_DP64_IDREG(&cpu->isar, ID_AA64ISAR0, CRC32,
+                    MIN(FIELD_EX64(isar0, ID_AA64ISAR0, CRC32), 1));
+    cpu->ctr = ctr;
+    set_dczid_bs(cpu, dczid & 15);
+}
+
 static bool zephyr_arm_cpu_realize(CPUState *cs, Error **errp)
 {
     ARMCPU *cpu = ARM_CPU(cs);
@@ -394,7 +427,8 @@ static bool zephyr_arm_cpu_realize(CPUState *cs, Error **errp)
     uint64_t host_midr;
     bool supported = strcmp(type, ARM_CPU_TYPE_NAME("cortex-a53")) == 0 ||
                      strcmp(type, ARM_CPU_TYPE_NAME("cortex-a57")) == 0 ||
-                     strcmp(type, ARM_CPU_TYPE_NAME("cortex-a72")) == 0;
+                     strcmp(type, ARM_CPU_TYPE_NAME("cortex-a72")) == 0 ||
+                     strcmp(type, ARM_CPU_TYPE_NAME("host")) == 0;
 
     __asm__ volatile("mrs %0, midr_el1" : "=r"(host_midr));
     /* Match implementer, architecture and part; revisions may differ. */
@@ -402,7 +436,7 @@ static bool zephyr_arm_cpu_realize(CPUState *cs, Error **errp)
         cpu->has_el2 || cpu->has_el3 || cpu->has_pmu || cpu->cfgend ||
         cpu->gt_cntfrq_hz != zephyr_counter_frequency() ||
         cpu->psci_conduit != QEMU_PSCI_CONDUIT_HVC) {
-        error_setg(errp, "zephyr requires a Cortex-A53/A57/A72 matching the host"
+        error_setg(errp, "zephyr requires host or Cortex-A53/A57/A72 matching the host"
                    " MIDR (0x%" PRIx64 "), EL1 without EL2/EL3/PMU, little-endian,"
                    " native CNTFRQ and PSCI over HVC", host_midr);
         return false;

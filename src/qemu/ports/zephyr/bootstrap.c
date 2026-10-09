@@ -100,8 +100,9 @@ static int run_guest(const struct qemu_zephyr_options *options)
     }
     if (strcmp(options->cpu, "cortex-a53") != 0 &&
         strcmp(options->cpu, "cortex-a57") != 0 &&
-        strcmp(options->cpu, "cortex-a72") != 0) {
-        error_report("unsupported CPU model: %s (use cortex-a53/a57/a72)",
+        strcmp(options->cpu, "cortex-a72") != 0 &&
+        (strcmp(options->accelerator, "zephyr") != 0 || strcmp(options->cpu, "host") != 0)) {
+        error_report("unsupported CPU model: %s (use cortex-a53/a57/a72 or native host)",
                      options->cpu);
         return -EINVAL;
     }

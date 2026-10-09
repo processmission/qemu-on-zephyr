@@ -237,7 +237,8 @@ int qemu_zephyr_parse_options(size_t argc, char **argv,
         goto out;
     }
     if ((strcmp(options->cpu, "cortex-a53") && strcmp(options->cpu, "cortex-a57") &&
-         strcmp(options->cpu, "cortex-a72")) ||
+         strcmp(options->cpu, "cortex-a72") &&
+         (strcmp(BUILT_ACCEL, "zephyr") || strcmp(options->cpu, "host"))) ||
         (!strcmp(BUILT_ACCEL, "zephyr") && strcmp(options->cpu, CONFIG_QEMU_CPU_MODEL))) {
         snprintf(error, error_size, "Unsupported CPU for this host: %s", options->cpu);
         goto out;

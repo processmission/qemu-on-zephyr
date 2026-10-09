@@ -21,6 +21,61 @@ _ASM_FILE_PROLOGUE
 	str	x2, [x3, #__zhv_a64_state_cntv_ctl_el0_OFFSET]
 .endm
 
+#ifdef CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS
+.macro host_lr save, reg
+	cmp	x6, #\reg
+	b.lo	1f
+	.if \save
+	mrs	x2, ich_lr\reg\()_el2
+	str	x2, [x7, #(8 * \reg)]
+	msr	ich_lr\reg\()_el2, xzr
+	.else
+	ldr	x2, [x7, #(8 * \reg)]
+	msr	ich_lr\reg\()_el2, x2
+	.endif
+1:
+.endm
+
+.macro host_lrs save
+	mrs	x6, ich_vtr_el2
+	and	x6, x6, #31
+	add	x7, x0, #__zhv_switch_context_host_lrs_OFFSET
+	.irp reg, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+	host_lr \save, \reg
+	.endr
+.endm
+
+.macro host_apr save, group, reg
+	.if \reg == 1
+	cmp	x6, #5
+	b.lo	1f
+	.elseif \reg > 1
+	cmp	x6, #6
+	b.lo	1f
+	.endif
+	.if \save
+	mrs	x2, ich_ap\group\()r\reg\()_el2
+	str	x2, [x7, #(8 * (4 * \group + \reg))]
+	msr	ich_ap\group\()r\reg\()_el2, xzr
+	.else
+	ldr	x2, [x7, #(8 * (4 * \group + \reg))]
+	msr	ich_ap\group\()r\reg\()_el2, x2
+	.endif
+1:
+.endm
+
+.macro host_aprs save
+	mrs	x6, ich_vtr_el2
+	ubfx	x6, x6, #26, #3
+	add	x7, x0, #__zhv_switch_context_host_aprs_OFFSET
+	.irp group, 0, 1
+	.irp reg, 0, 1, 2, 3
+	host_apr \save, \group, \reg
+	.endr
+	.endr
+.endm
+#endif
+
 .macro restore_shared
 #define RESTORE_SHARED(name) ldr x2, [x3, #__zhv_a64_state_##name##_OFFSET]; msr name, x2;
 	ZHV_SHARED_REGS(RESTORE_SHARED)
@@ -69,6 +124,12 @@ SECTION_FUNC(TEXT, zhv_enter_asm)
 #define SAVE_HOST(name) mrs x2, name; str x2, [x0, #__zhv_switch_context_host_##name##_OFFSET];
 	ZHV_HOST_EL2_REGS(SAVE_HOST)
 #undef SAVE_HOST
+#ifdef CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS
+	msr	ich_hcr_el2, xzr
+	isb
+	host_lrs 1
+	host_aprs 1
+#endif
 
 	/* Every subsequent exception can recover this pointer without guest TLS. */
 	msr	tpidr_el2, x0
@@ -86,8 +147,25 @@ SECTION_FUNC(TEXT, zhv_enter_asm)
 	msr	hcr_el2, x2
 	isb
 
-	/* Trap GIC CPU interface access without enabling a hardware virtual GIC. */
+	/* The external model handles every GIC CPU-interface access. */
+#ifdef CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS
+	/* Private LR IDs only carry lines; trapped IAR reads use the model's IDs. */
+	ldr	x5, [x0, #__zhv_switch_context_guest_irq_lines_OFFSET]
+	ldr	x2, =0x5000000000000020
+	tst	x5, #1
+	csel	x2, x2, xzr, ne
+	msr	ich_lr0_el2, x2
+	ldr	x2, =0x4000000000000021
+	tst	x5, #2
+	csel	x2, x2, xzr, ne
+	msr	ich_lr1_el2, x2
+	/* The model already resolves priorities before asserting either line. */
+	ldr	x2, =0xff00000b
+	msr	ich_vmcr_el2, x2
+	mov	x2, #0x5c01
+#else
 	mov	x2, #0x5c00
+#endif
 	msr	ich_hcr_el2, x2
 	mrs	x2, icc_sre_el2
 	bic	x2, x2, #8
@@ -206,6 +284,12 @@ zhv_leave:
 	isb
 	add	x3, x0, #__zhv_switch_context_host_OFFSET
 	restore_shared
+#ifdef CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS
+	msr	ich_hcr_el2, xzr
+	isb
+	host_lrs 0
+	host_aprs 0
+#endif
 #define RESTORE_HOST(name) ldr x2, [x0, #__zhv_switch_context_host_##name##_OFFSET]; msr name, x2;
 	ZHV_HOST_EL2_REGS(RESTORE_HOST)
 #undef RESTORE_HOST

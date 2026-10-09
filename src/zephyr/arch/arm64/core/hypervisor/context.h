@@ -15,10 +15,18 @@
 	_(cpacr_el1) _(esr_el1) _(far_el1) _(afsr0_el1) _(afsr1_el1) \
 	_(cntkctl_el1)
 
+#ifdef CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS
+#define ZHV_HOST_GIC_REGS(_) \
+	_(ich_vmcr_el2)
+#else
+#define ZHV_HOST_GIC_REGS(_)
+#endif
+
 #define ZHV_HOST_EL2_REGS(_) \
 	_(hcr_el2) _(cptr_el2) _(mdcr_el2) _(cnthctl_el2) _(cntvoff_el2) \
 	_(vtcr_el2) _(vttbr_el2) _(vbar_el2) _(vpidr_el2) _(vmpidr_el2) \
-	_(tpidr_el2) _(elr_el2) _(spsr_el2) _(icc_sre_el2) _(ich_hcr_el2)
+	_(tpidr_el2) _(elr_el2) _(spsr_el2) _(icc_sre_el2) \
+	ZHV_HOST_GIC_REGS(_) _(ich_hcr_el2)
 
 #ifndef _ASMLANGUAGE
 #include <zephyr/virtualization/zhv.h>
@@ -31,6 +39,8 @@ struct zhv_switch_context {
 #undef ZHV_EL2_FIELD
 	uint64_t host_sp, host_daif;
 	uint64_t guest_hcr, guest_vtcr, guest_vttbr, guest_offset;
+	uint64_t guest_irq_lines;
+	uint64_t host_lrs[16], host_aprs[8];
 	uint64_t esr, far, hpfar, vector, irq_id;
 };
 

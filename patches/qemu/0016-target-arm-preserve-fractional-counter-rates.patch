@@ -1,0 +1,194 @@
+From bfd30619be78512c8eb44cdfcefd5a008ed3ebda Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu@processmission.com>
+Date: Sat, 10 Oct 2026 00:31:33 +0800
+Subject: [PATCH] target/arm: preserve fractional-nanosecond counter rates
+
+Convert between counter ticks and nanoseconds using the counter's rate.
+Store timer deadlines in nanoseconds and round expiry upward, with
+saturation at the signed timer limit. Apply the same conversions to
+WFI/WFE timeouts and event streams.
+
+This keeps emulated physical counters on the same time base as native
+virtual counters at rates such as 24 MHz.
+
+Signed-off-by: Chao Liu <chao.liu@processmission.com>
+---
+ target/arm/cpu.c           | 39 +++++++++++++++++---------------------
+ target/arm/cpu.h           |  3 ++-
+ target/arm/helper.c        | 10 +++-------
+ target/arm/tcg/op_helper.c | 26 ++++---------------------
+ 4 files changed, 26 insertions(+), 52 deletions(-)
+
+diff --git a/target/arm/cpu.c b/target/arm/cpu.c
+index 9693e18..e40b652 100644
+--- a/target/arm/cpu.c
++++ b/target/arm/cpu.c
+@@ -19,6 +19,7 @@
+  */
+ 
+ #include "qemu/osdep.h"
++#include "qemu/host-utils.h"
+ #include "qemu/qemu-print.h"
+ #include "qemu/timer.h"
+ #include "qemu/log.h"
+@@ -1428,28 +1429,22 @@ static void aarch64_cpu_set_aarch64(Object *obj, bool value, Error **errp)
+     }
+ }
+ 
+-unsigned int gt_cntfrq_period_ns(ARMCPU *cpu)
++uint64_t gt_ns_to_ticks(ARMCPU *cpu, uint64_t ns)
+ {
+-    /*
+-     * The exact approach to calculating guest ticks is:
+-     *
+-     *     muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), cpu->gt_cntfrq_hz,
+-     *              NANOSECONDS_PER_SECOND);
+-     *
+-     * We don't do that. Rather we intentionally use integer division
+-     * truncation below and in the caller for the conversion of host monotonic
+-     * time to guest ticks to provide the exact inverse for the semantics of
+-     * the QEMUTimer scale factor. QEMUTimer's scale facter is an integer, so
+-     * it loses precision when representing frequencies where
+-     * `(NANOSECONDS_PER_SECOND % cpu->gt_cntfrq) > 0` holds. Failing to
+-     * provide an exact inverse leads to scheduling timers with negative
+-     * periods, which in turn leads to sticky behaviour in the guest.
+-     *
+-     * Finally, CNTFRQ is effectively capped at 1GHz to ensure our scale factor
+-     * cannot become zero.
+-     */
+-    return NANOSECONDS_PER_SECOND > cpu->gt_cntfrq_hz ?
+-      NANOSECONDS_PER_SECOND / cpu->gt_cntfrq_hz : 1;
++    uint32_t rate = MIN(cpu->gt_cntfrq_hz, NANOSECONDS_PER_SECOND);
++
++    return muldiv64(ns, rate, NANOSECONDS_PER_SECOND);
++}
++
++int64_t gt_ticks_to_ns(ARMCPU *cpu, uint64_t ticks)
++{
++    uint32_t rate = MIN(cpu->gt_cntfrq_hz, NANOSECONDS_PER_SECOND);
++
++    if (ticks > muldiv64(INT64_MAX, rate, NANOSECONDS_PER_SECOND)) {
++        return INT64_MAX;
++    }
++    /* Round expiry up so the sampled counter has reached the compare value. */
++    return muldiv64_round_up(ticks, NANOSECONDS_PER_SECOND, rate);
+ }
+ 
+ static void arm_cpu_propagate_feature_implications(ARMCPU *cpu)
+@@ -1925,7 +1920,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
+     }
+ #ifndef CONFIG_USER_ONLY
+     {
+-        uint64_t scale = gt_cntfrq_period_ns(cpu);
++        uint64_t scale = 1;
+ 
+         cpu->gt_timer[GTIMER_PHYS] = timer_new(QEMU_CLOCK_VIRTUAL, scale,
+                                                arm_gt_ptimer_cb, cpu);
+diff --git a/target/arm/cpu.h b/target/arm/cpu.h
+index e3f931d..2a4ee60 100644
+--- a/target/arm/cpu.h
++++ b/target/arm/cpu.h
+@@ -1215,7 +1215,8 @@ void arm_gt_hvtimer_cb(void *opaque);
+ void arm_gt_sel2timer_cb(void *opaque);
+ void arm_gt_sel2vtimer_cb(void *opaque);
+ 
+-unsigned int gt_cntfrq_period_ns(ARMCPU *cpu);
++uint64_t gt_ns_to_ticks(ARMCPU *cpu, uint64_t ns);
++int64_t gt_ticks_to_ns(ARMCPU *cpu, uint64_t ticks);
+ void gt_rme_post_el_change(ARMCPU *cpu, void *opaque);
+ 
+ #define ARM_AFF0_SHIFT 0
+diff --git a/target/arm/helper.c b/target/arm/helper.c
+index c3f607e..5f6a8e3 100644
+--- a/target/arm/helper.c
++++ b/target/arm/helper.c
+@@ -1399,7 +1399,7 @@ uint64_t gt_get_countervalue(CPUARMState *env)
+ {
+     ARMCPU *cpu = env_archcpu(env);
+ 
+-    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / gt_cntfrq_period_ns(cpu);
++    return gt_ns_to_ticks(cpu, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+ }
+ 
+ static void gt_update_gicv5_ppi(CPUARMState *env, int timeridx, bool level)
+@@ -1589,11 +1589,7 @@ static void gt_recalc_timer(ARMCPU *cpu, int timeridx)
+          * set the timer for as far in the future as possible. When the
+          * timer expires we will reset the timer for any remaining period.
+          */
+-        if (nexttick > INT64_MAX / gt_cntfrq_period_ns(cpu)) {
+-            timer_mod_ns(cpu->gt_timer[timeridx], INT64_MAX);
+-        } else {
+-            timer_mod(cpu->gt_timer[timeridx], nexttick);
+-        }
++        timer_mod_ns(cpu->gt_timer[timeridx], gt_ticks_to_ns(cpu, nexttick));
+         trace_arm_gt_recalc(timeridx, nexttick);
+     } else {
+         /* Timer disabled: ISTATUS and timer output always clear */
+@@ -2378,7 +2374,7 @@ static uint64_t gt_virt_cnt_read(CPUARMState *env, const ARMCPRegInfo *ri)
+      * can't call gt_get_countervalue(env), instead we directly
+      * call the lower level functions.
+      */
+-    return cpu_get_clock() / gt_cntfrq_period_ns(cpu);
++    return gt_ns_to_ticks(cpu, cpu_get_clock());
+ }
+ 
+ static const ARMCPRegInfo generic_timer_cp_reginfo[] = {
+diff --git a/target/arm/tcg/op_helper.c b/target/arm/tcg/op_helper.c
+index c2b0917..6f7d278 100644
+--- a/target/arm/tcg/op_helper.c
++++ b/target/arm/tcg/op_helper.c
+@@ -451,15 +451,7 @@ void HELPER(wfit)(CPUARMState *env, uint32_t rd)
+     if (uadd64_overflow(timeout, offset, &nexttick)) {
+         nexttick = UINT64_MAX;
+     }
+-    if (nexttick > INT64_MAX / gt_cntfrq_period_ns(cpu)) {
+-        /*
+-         * If the timeout is too long for the signed 64-bit range
+-         * of a QEMUTimer, let it expire early.
+-         */
+-        timer_mod_ns(cpu->wfxt_timer, INT64_MAX);
+-    } else {
+-        timer_mod(cpu->wfxt_timer, nexttick);
+-    }
++    timer_mod_ns(cpu->wfxt_timer, gt_ticks_to_ns(cpu, nexttick));
+     env->halt_reason = HALT_WFI;
+     cs->exception_index = EXCP_HLT;
+     cs->halted = 1;
+@@ -523,11 +515,7 @@ static int64_t gt_recalc_one_evt(CPUARMState *env, uint32_t control, uint64_t of
+         if (uadd64_overflow(next_tick, offset, &abstick)) {
+             abstick = UINT64_MAX;
+         }
+-        if (abstick > INT64_MAX / gt_cntfrq_period_ns(cpu)) {
+-            return INT64_MAX;
+-        } else {
+-            return abstick;
+-        }
++        return gt_ticks_to_ns(cpu, abstick);
+     }
+ 
+     return -1;
+@@ -708,19 +696,13 @@ void HELPER(wfet)(CPUARMState *env, uint32_t rd)
+     if (uadd64_overflow(timeout, offset, &nexttick)) {
+         nexttick = UINT64_MAX;
+     }
+-    if (nexttick > INT64_MAX / gt_cntfrq_period_ns(cpu)) {
+-        nexttick = INT64_MAX;
+-    }
++    nexttick = gt_ticks_to_ns(cpu, nexttick);
+ 
+     next_event = gt_calc_next_event_stream(env);
+     if (next_event > 0 && next_event < nexttick) {
+         timer_mod(cpu->wfxt_timer, next_event);
+     } else {
+-        if (nexttick == INT64_MAX) {
+-            timer_mod_ns(cpu->wfxt_timer, INT64_MAX);
+-        } else {
+-            timer_mod(cpu->wfxt_timer, nexttick);
+-        }
++        timer_mod_ns(cpu->wfxt_timer, nexttick);
+     }
+ 
+     env->halt_reason = HALT_WFE;
+-- 
+2.56.0
+

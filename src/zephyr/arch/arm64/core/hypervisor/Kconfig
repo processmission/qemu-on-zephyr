@@ -26,4 +26,12 @@ config ARM64_HYPERVISOR_IPA_BITS
 	  Increase the guest physical address range when a memory-mapped image
 	  lives above the guest's main RAM. Stage-2 tables cover this range.
 
+config ARM64_HYPERVISOR_GIC_LR_IRQS
+	bool "Use GIC List Registers for virtual interrupt lines"
+	help
+	  Signal the external device model's IRQ and FIQ lines with two GIC
+	  virtual List Registers. CPU-interface accesses remain trapped, so
+	  interrupt acknowledgement and priority belong to the device model.
+	  Supports nested hypervisors that do not implement HCR VI/VF injection.
+
 endif # ARM64_HYPERVISOR

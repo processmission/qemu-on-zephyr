@@ -1,0 +1,81 @@
+From 50e4514e1602a62bdbde688d285debafd5c857a7 Mon Sep 17 00:00:00 2001
+From: Chao Liu <chao.liu@processmission.com>
+Date: Fri, 9 Oct 2026 23:24:50 +0800
+Subject: [PATCH] arm64: read the architected counter frequency from the host
+
+Allow the architected timer to obtain its rate from CNTFRQ_EL0 and skip
+the early frequency write when the timer queries its rate at runtime.
+This supports virtual EL2 environments with a read-only counter rate.
+
+Signed-off-by: Chao Liu <chao.liu@processmission.com>
+---
+ arch/arm64/core/reset.c        |  3 ++-
+ drivers/timer/Kconfig.arm_arch |  9 +++++++++
+ drivers/timer/arm_arch_timer.c | 10 ++++++++++
+ 3 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/core/reset.c b/arch/arm64/core/reset.c
+index 9e8022fbd..bbe59d1ce 100644
+--- a/arch/arm64/core/reset.c
++++ b/arch/arm64/core/reset.c
+@@ -36,7 +36,8 @@ void __weak z_arm64_el1_plat_init(void)
+ 
+ void z_arm64_el_highest_init(void)
+ {
+-	if (is_el_highest_implemented()) {
++	if (!IS_ENABLED(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME) &&
++	    is_el_highest_implemented()) {
+ 		write_cntfrq_el0(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
+ 	}
+ 
+diff --git a/drivers/timer/Kconfig.arm_arch b/drivers/timer/Kconfig.arm_arch
+index d55d685e2..908a28403 100644
+--- a/drivers/timer/Kconfig.arm_arch
++++ b/drivers/timer/Kconfig.arm_arch
+@@ -14,6 +14,15 @@ config ARM_ARCH_TIMER
+ 	  timer which provides per-cpu timers attached to a GIC to deliver its
+ 	  per-processor interrupts via PPIs.
+ 
++config ARM_ARCH_TIMER_READ_FREQUENCY
++	bool "Read the architected counter frequency at runtime"
++	depends on ARM_ARCH_TIMER && ARM64
++	select TIMER_READS_ITS_FREQUENCY_AT_RUNTIME
++	help
++	  Use CNTFRQ_EL0 as provided by firmware or the hypervisor. This permits
++	  a virtual platform to use its physical counter frequency without
++	  requiring a writable CNTFRQ_EL0 register.
++
+ config ARM_ARCH_TIMER_ERRATUM_740657
+ 	bool "ARM architected timer is affected by ARM erratum 740657"
+ 	depends on ARM_ARCH_TIMER
+diff --git a/drivers/timer/arm_arch_timer.c b/drivers/timer/arm_arch_timer.c
+index 676a920fb..f3ce2b373 100644
+--- a/drivers/timer/arm_arch_timer.c
++++ b/drivers/timer/arm_arch_timer.c
+@@ -9,6 +9,7 @@
+ #include <zephyr/irq.h>
+ #include <zephyr/sys/clock.h>
+ #include <zephyr/arch/cpu.h>
++#include <errno.h>
+ 
+ /*
+  * Free-running 64-bit system counter plus an absolute compare register: a
+@@ -132,6 +133,15 @@ void smp_timer_init(void)
+ 
+ static int sys_clock_driver_init(void)
+ {
++#ifdef CONFIG_ARM_ARCH_TIMER_READ_FREQUENCY
++	extern unsigned int z_clock_hw_cycles_per_sec;
++	uint64_t frequency = read_cntfrq_el0();
++
++	if (frequency == 0U || frequency > UINT32_MAX) {
++		return -EINVAL;
++	}
++	z_clock_hw_cycles_per_sec = (unsigned int)frequency;
++#endif
+ 
+ 	IRQ_CONNECT(ARM_ARCH_TIMER_IRQ, ARM_ARCH_TIMER_PRIO,
+ 		    arm_arch_timer_compare_isr, NULL, ARM_ARCH_TIMER_FLAGS);
+-- 
+2.56.0
+

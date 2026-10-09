@@ -71,7 +71,10 @@ int zephyr_accel_probe(CPUState *cpu, Error **errp)
         }
     }
     if (ret != EXCP_HLT || s->mmio_exits - before_mmio != 5) {
-        error_setg(errp, "zephyr probe did not complete five PL011 writes");
+        error_setg(errp, "zephyr probe did not complete five PL011 writes:"
+                   " ret=%d writes=%" PRIu64 " exit=%u pc=0x%" PRIx64,
+                   ret, s->mmio_exits - before_mmio, s->exit.reason,
+                   s->exit.pc);
         return -EIO;
     }
     rcu_read_lock();
@@ -90,6 +93,7 @@ int zephyr_accel_probe(CPUState *cpu, Error **errp)
         return -EIO;
     }
     printf("zephyr accel probe: ARMCPU, five PL011 MMIO exits, WFI, "
-           "CNTPCT/CNTVCT same origin (delta=%" PRIu64 ")\n", second - first);
+           "CNTPCT/CNTVCT same origin (freq=%" PRIu64 " delta=%" PRIu64 ")\n",
+           zephyr_counter_frequency(), second - first);
     return 0;
 }

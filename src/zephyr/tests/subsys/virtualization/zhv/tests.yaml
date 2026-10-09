@@ -22,3 +22,15 @@ tests:
     extra_configs:
       - CONFIG_ARM64_HYPERVISOR_IPA_BITS=36
     timeout: 120
+  subsys.virtualization.zhv.lr_irqs:
+    tags:
+      - arm64
+      - virtualization
+    platform_allow:
+      - qemu_cortex_a53
+    integration_platforms:
+      - qemu_cortex_a53
+    extra_configs:
+      - CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS=y
+      - CONFIG_ARM_ARCH_TIMER_READ_FREQUENCY=y
+    timeout: 120

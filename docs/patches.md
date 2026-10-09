@@ -27,6 +27,8 @@ additional patches after that baseline.
 | 0012 | GICv3-only CPU initialization for the selected models |
 | 0013 | Share the unchanged Cortex-A72 model across accelerators |
 | 0014 | Linux user ELF loading and checked TCG user memory on Zephyr |
+| 0015 | Native host CPU registration for the Zephyr accelerator |
+| 0016 | Accurate fractional-nanosecond counter rates and timer expiry |
 
 ## Zephyr
 
@@ -40,6 +42,7 @@ additional patches after that baseline.
 | 0006 | Native executor build hook and QEMU board configuration |
 | 0007 | Read-only Ext2 inode close and synchronization |
 | 0008 | ARM64 interrupt metadata placement for virtual address ranges above 4 GiB |
+| 0009 | Runtime architected counter frequency for virtual hardware |
 
 These are module integration patches: new implementation files remain in
 `src/qemu/` and `src/zephyr/` and are overlaid by `make prepare`. The series

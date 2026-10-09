@@ -184,6 +184,16 @@ int zhv_vm_create(const struct zhv_vm_config *config, struct zhv_vm **vm, struct
 		ret = -ENOMEM;
 		goto out;
 	}
+#ifdef CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS
+	uint64_t vtr = read_sysreg(ich_vtr_el2);
+	unsigned int priority_bits = ((vtr >> 26) & 7U) + 1U;
+
+	if ((vtr & 31U) < 1U || (vtr & 31U) > 15U ||
+	    priority_bits < 5U || priority_bits > 7U) {
+		ret = -ENOTSUP;
+		goto out;
+	}
+#endif
 	parange = read_id_aa64mmfr0_el1() & 15U;
 	if (GET_EL(read_currentel()) != MODE_EL2 || parange >= ARRAY_SIZE(pa_bits) ||
 	    (read_cntv_ctl_el0() & 1U) != 0U) {
@@ -439,8 +449,12 @@ int zhv_vcpu_run(struct zhv_vcpu *vcpu, const struct zhv_run_input *input,
 	if (!sample.level) {
 		arm_gic_irq_enable(ARM_TIMER_VIRTUAL_IRQ);
 	}
-	vcpu->context.guest_hcr = GUEST_HCR | (input->irq ? BIT64(7) : 0U) |
-				  (input->fiq ? BIT64(6) : 0U);
+	vcpu->context.guest_hcr = GUEST_HCR;
+	vcpu->context.guest_irq_lines = (input->irq ? 1U : 0U) | (input->fiq ? 2U : 0U);
+	if (!IS_ENABLED(CONFIG_ARM64_HYPERVISOR_GIC_LR_IRQS)) {
+		vcpu->context.guest_hcr |= (input->irq ? BIT64(7) : 0U) |
+					   (input->fiq ? BIT64(6) : 0U);
+	}
 	arch_flush_local_fpu();
 	zhv_enter_asm(&vcpu->context);
 	/* Assembly restored host pointers, vectors and FP traps before reaching C. */
