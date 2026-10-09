@@ -2,7 +2,11 @@
 
 **Chinese title:** QEMU on Zephyr：拓展 Zephyr 的 POSIX、模拟与虚拟化能力边界
 
-**Speaker:** Chao Liu (Zevorn, 刘超／泽文), Senior Software Engineer at Process Mission (进程使命); QEMU RISC-V Maintainer; Zephyr/Linux Contributor
+**Author:** Chao Liu
+
+**Affiliation:** Process Mission
+
+[LaTeX manuscript](paper.tex)
 
 **Implementation baseline:** `2b1161806afe14fe57dec97234f37aac1ea84e5e`
 
@@ -590,6 +594,15 @@ updates and restart procedures. The principal assessment sources are
 [`os-zephyr.h`](../src/qemu/ports/zephyr/os-zephyr.h), the
 [module source lists](../zephyr/CMakeLists.txt), and the pinned Zephyr
 implementations linked in Section 4.
+
+The [LaTeX manuscript](paper.tex) is a standalone document with an embedded
+bibliography. With Tectonic available, generate the PDF from the repository
+root:
+
+```sh
+mkdir -p build/paper
+tectonic --outdir build/paper docs/paper.tex
+```
 
 ## References
 
