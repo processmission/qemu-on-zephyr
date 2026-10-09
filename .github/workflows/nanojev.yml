@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: Apache-2.0
+name: NanoJev CPU desktop
+
+on:
+  push:
+    paths:
+      - '.github/workflows/nanojev.yml'
+      - 'apps/qemu_linux/**'
+      - 'samples/nanojev/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'patches/**'
+      - 'zephyr/**'
+      - 'west/**'
+      - 'Makefile'
+      - 'requirements*.txt'
+  pull_request:
+    paths:
+      - '.github/workflows/nanojev.yml'
+      - 'apps/qemu_linux/**'
+      - 'samples/nanojev/**'
+      - 'scripts/**'
+      - 'src/**'
+      - 'patches/**'
+      - 'zephyr/**'
+      - 'west/**'
+      - 'Makefile'
+      - 'requirements*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nanojev:
+    name: ZHV Linux guest and NanoJev CPU inference
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      JOBS: 4
+      QEMU_SYSTEM_AARCH64: /usr/bin/qemu-system-aarch64
+      NANOJEV_MAZE_SIZE: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install build and display dependencies
+        run: |
+          make host-deps
+          sudo apt-get install -y --no-install-recommends qemu-system-arm ipxe-qemu seabios ffmpeg fonts-dejavu-core
+          docker info
+      - uses: actions/cache@v6.1.0
+        with:
+          path: |
+            .tools/zephyr-sdk-1.0.1
+            downloads
+            ~/.cache/pip
+          key: qoz-${{ runner.os }}-${{ runner.arch }}-sdk-1.0.1-${{ hashFiles('requirements*.txt', 'tests/requirements.txt') }}
+      - name: Set up workspace and SDK
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          make setup
+          .venv/bin/python -m pip install -r requirements-demo.txt
+      - name: Build and run the NanoJev CPU desktop
+        run: |
+          make nanojev-assets
+          .venv/bin/python scripts/check_nanojev.py --maze-size "$NANOJEV_MAZE_SIZE" --timeout 7200
+      - name: Upload guest inference and display evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: nanojev-cpu-desktop
+          path: |
+            build/nanojev-validation/*.log
+            build/nanojev-validation/*.json
+            build/nanojev-validation/*.png
+            build/nanojev-validation/*.gif
+            build/nanojev-validation/*.mp4
+            build/nanojev-validation/*.cast
+            build/nanojev-files/*.json
+            build/nanojev-files/*.txt
+            build/nanojev-files/kernel.config

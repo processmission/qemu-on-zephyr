@@ -66,8 +66,16 @@ jobs:
         os: [ubuntu-24.04, macos-14]
         accel: [zephyr, tcg]
         cpu: [cortex-a53, cortex-a57, cortex-a72]
+        include:
+          - os: ubuntu-24.04
+            accel: zephyr
+            cpu: host
+          - os: macos-14
+            accel: zephyr
+            cpu: host
     env:
       QEMU_ARGS: -M zephyr-virt -accel ${{ matrix.accel }} -cpu ${{ matrix.cpu }}
+      HOST_ACCEL: tcg
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Install host dependencies
@@ -90,7 +98,7 @@ jobs:
           make check
       - name: Run component regressions
         if: matrix.accel == 'zephyr' && matrix.cpu == 'cortex-a53'
-        run: make probe test-payload test-glib test-arch
+        run: make probe test-payload test-glib test-arch test-counter
       - name: Load ELF and raw firmware from the Zephyr filesystem
         if: matrix.cpu == 'cortex-a53'
         run: make check-firmware
