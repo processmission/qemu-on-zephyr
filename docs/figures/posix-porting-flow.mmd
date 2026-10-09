@@ -1,17 +1,16 @@
-%% Source for the manuscript's portability assessment workflow.
+%% The paper evaluates host compatibility and QEMU implementation changes.
 flowchart LR
-    A["Zephyr catalog<br/>393 interfaces"] --> C["Inspect providers<br/>and configuration"]
-    B["QEMU audit<br/>50 contracts"] --> C
-    C --> D["Native probes<br/>and guest tests"]
-    D --> E["Reuse host API"]
-    D --> F["Constrain or adapt"]
-    D --> G["Unavailable"]
-    E --> H["Evidence ledger<br/>sources and limits"]
-    F --> H
-    G --> H
+    A["Zephyr POSIX<br/>393 catalog entries"] --> B["Audit: 50 contracts<br/>Selected API probes"]
+    B --> C["Reuse, adapt<br/>or restrict"]
+    C --> D["Host compatibility<br/>and port support"]
+    E["QEMU source<br/>14 patches + new modules"] --> F["Inspect changed<br/>execution paths"]
+    F --> G["Core integration<br/>and feature scope"]
+    G --> H["QEMU changes<br/>and test results"]
+    C -.-> G
     classDef input fill:#e7f0f7,stroke:#0072B2,color:#111111;
     classDef work fill:#f4f4f4,stroke:#555555,color:#111111;
     classDef decision fill:#fbeddc,stroke:#A56B00,color:#111111;
-    class A,B input;
-    class C,D,H work;
-    class E,F,G decision;
+    class A,E input;
+    class B,F work;
+    class C,G decision;
+    class D,H work;

@@ -1,0 +1,15 @@
+patch,filename,group,files,insertions,deletions
+0001,0001-osdep-add-zephyr-host-definitions.patch,Host interface,3,16,1
+0002,0002-util-allocate-aligned-memory-on-zephyr.patch,Host interface,1,7,1
+0003,0003-util-resolve-zephyr-executable-and-data-paths.patch,Host interface,2,23,3
+0004,0004-util-omit-wall-clock-timestamps-on-zephyr.patch,Host interface,1,5,2
+0005,0005-util-reject-unsupported-zephyr-guest-random-modes.patch,Host interface,1,17,1
+0006,0006-accel-integrate-the-zephyr-cpu-and-machine-lifecycle.patch,CPU and runstate,7,46,1
+0007,0007-hw-omit-migration-registration-in-zephyr-device-models.patch,Device loader and RAM profile,3,18,0
+0008,0008-hw-arm-load-linux-payloads-without-firmware-services.patch,Device loader and RAM profile,2,23,1
+0009,0009-system-support-preallocated-zephyr-guest-memory.patch,Device loader and RAM profile,1,6,0
+0010,0010-system-adapt-zephyr-runstate-request-handling.patch,CPU and runstate,1,20,1
+0011,0011-tcg-map-separate-write-and-execute-aliases-on-zephyr.patch,TCG code allocation,1,14,1
+0012,0012-target-arm-limit-zephyr-cpus-to-the-gicv3-interface.patch,CPU models,1,5,0
+0013,0013-target-arm-share-cortex-a72-across-accelerators.patch,CPU models,2,62,62
+0014,0014-linux-user-support-zephyr-execution.patch,Linux user execution,8,86,13

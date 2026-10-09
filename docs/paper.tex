@@ -55,6 +55,10 @@ operations. File mappings, positional I/O, signals, and process lifetime
 require adapters or restricted behavior. Source inspection, native API
 probes, and guest executions identify these limits.
 
+Host compatibility depends on POSIX behavior, added libraries, and Zephyr
+kernel support. QEMU needs 14 patches to existing files plus new machine,
+accelerator, and user-runtime modules.
+
 The Zephyr catalog lists 393 interfaces, with qualifications or missing
 support labels for 104 entries. A separate audit of 50 host interfaces finds
 31 reused APIs, eight adaptations, two metadata limits, and nine unavailable
@@ -80,16 +84,17 @@ and C library determine which POSIX services the application can
 use~\cite{zephyr-posix}. The port must account for API behavior, resource
 limits, and this shared runtime. The evaluation records direct API use,
 project adaptations, and missing behavior for the fixed source revisions.
+It also records how the port changes QEMU execution paths and which upstream
+components it retains.
 
 \section{Assessment scope}
 \label{sec:frame}
 
-The assessment separates the host POSIX API, QEMU library requirements, and
-the guest Linux ABI. Each finding records its implementation, configuration,
-adapter, and test result. Source inspection identifies code paths such as
-\code{ENOSYS} returns. Runtime observations establish behavior for the
-executed inputs. Figure~\ref{fig:assessment-flow} gives the workflow;
-Section~\ref{sec:inventory} defines the two inventory denominators.
+The assessment uses two axes (Figure~\ref{fig:assessment-flow}).
+The first records POSIX behavior and the support added during the port.
+The second records changes to QEMU code and its execution model.
+One host limitation can cause changes on both axes; the records retain that
+causal link.
 
 \begin{figure*}[t]
 \centering
@@ -97,58 +102,103 @@ Section~\ref{sec:inventory} defines the two inventory denominators.
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[x=1mm,y=1mm,
   box/.style={draw=black!65,fill=black!3,rounded corners=1mm,
-    text width=24mm,minimum height=10mm,align=center,font=\footnotesize},
+    text width=28mm,minimum height=14mm,align=center,font=\footnotesize},
   inputbox/.style={box,draw=posixblue,fill=posixblue!9},
   route/.style={box,draw=posixorange!75!black,fill=posixorange!12},
   edge/.style={-{Stealth[length=1.8mm]},line width=0.5pt}]
-\node[inputbox] (A) at (0,9) {Zephyr catalog\\393 interfaces};
-\node[inputbox] (B) at (0,-9) {QEMU audit\\50 contracts};
-\node[box] (C) at (34,0) {Inspect providers\\and configuration};
-\node[box] (D) at (68,0) {Native probes\\and guest tests};
-\node[route] (E) at (102,16) {Reuse host API};
-\node[route] (F) at (102,0) {Constrain or adapt};
-\node[route] (G) at (102,-16) {Unavailable};
-\node[box] (H) at (136,0) {Evidence ledger\\sources and limits};
-\draw[edge] (A.east) -- (C.west);
-\draw[edge] (B.east) -- (C.west);
+\node[inputbox] (A) at (0,13) {Zephyr POSIX\\393 catalog entries};
+\node[box] (B) at (45,13) {Audit: 50 contracts\\Selected API probes};
+\node[route] (C) at (90,13) {Reuse, adapt\\or restrict};
+\node[box] (D) at (135,13) {Host compatibility\\and port support};
+\node[inputbox] (E) at (0,-13) {QEMU source\\14 patches + new modules};
+\node[box] (F) at (45,-13) {Inspect changed\\execution paths};
+\node[route] (G) at (90,-13) {Core integration\\and feature scope};
+\node[box] (H) at (135,-13) {QEMU changes\\and test results};
+\draw[edge] (A) -- (B);
+\draw[edge] (B) -- (C);
 \draw[edge] (C) -- (D);
-\draw[edge] (D.east) -- (E.west);
-\draw[edge] (D) -- (F);
-\draw[edge] (D.east) -- (G.west);
-\draw[edge] (E.east) -- (H.west);
-\draw[edge] (F) -- (H);
-\draw[edge] (G.east) -- (H.west);
+\draw[edge] (E) -- (F);
+\draw[edge] (F) -- (G);
+\draw[edge] (G) -- (H);
+\draw[edge,dashed] (C.south) -- (G.north);
 \end{tikzpicture}}
-\caption{Assessment workflow. Each finding retains its provider,
-configuration, evidence and limitations.}
+\caption{Two assessment axes. The upper path records host behavior and
+additional port support. The lower path records QEMU implementation changes.
+The dashed edge links a host constraint to its effect on QEMU.}
 \label{fig:assessment-flow}
 \end{figure*}
 
-\subsection{The host POSIX interface}
+\subsection{Host compatibility and port support}
 
 QEMU calls Zephyr and Picolibc for threads, clocks, files, and related host
 services. The application enables compiler TLS and sets finite limits for
 threads, mutexes, condition variables, and descriptors. These settings are in
 \source{apps/qemu_linux/prj.conf} and \source{zephyr/Kconfig}.
 
-\subsection{QEMU library requirements}
+This axis records direct POSIX use, restricted behavior, and missing services.
+It also identifies additional library, build, storage, and kernel support.
+Sections~\ref{sec:porting} and~\ref{sec:assessment} give the implementations
+and observations.
 
-QEMU uses the QEMU Object Model (QOM), MemoryRegion, the big QEMU lock (BQL),
-and read-copy-update (RCU). The port includes GLib containers and TCG.
-The GLib tests record library behavior. Feature exclusions, such as
-migration, describe this QEMU build. They require source analysis before
-attribution to a missing POSIX service.
+GLib supplies library behavior outside POSIX. User programs issue Linux
+AArch64 syscall numbers, while Zephyr generates its kernel syscall identifiers
+at build time~\cite{zephyr-implementation}. The guest ABI adapter in
+\source{src/qemu/ports/zephyr/user-syscall.c} has separate results.
 
-\subsection{The guest Linux ABI}
+\subsection{QEMU implementation changes}
 
-User programs issue Linux AArch64 syscall numbers. Zephyr uses kernel syscall
-identifiers generated at build time~\cite{zephyr-implementation}.
-\source{src/qemu/ports/zephyr/user-syscall.c} translates the Linux ABI to host
-operations. Guest syscall tests examine this adapter and the host services
-that it calls.
+This axis records patches to existing QEMU files, new QEMU modules, and
+features excluded from the build. It identifies the changed execution paths
+and the upstream components that remain in use.
+Section~\ref{sec:qemu-changes} gives the patch groups and module roles.
 
-\section{Porting method}
+Core components include the QEMU Object Model (QOM), big QEMU lock (BQL),
+and read-copy-update (RCU).
+
+For example, the host probe records \code{mprotect()} returning
+\code{ENOSYS}. The QEMU change record identifies the TCG and memory-helper
+changes that enforce guest permissions. The first result describes host
+behavior; the second describes the emulator's response.
+
+\section{Host compatibility: added port support}
 \label{sec:porting}
+
+The port adds the support in Table~\ref{tab:port-support}. Its POSIX wrappers
+reuse enabled APIs. Other additions supply library behavior, kernel
+integration, or application control.
+The Zephyr series in \source{patches/zephyr/series} contains six architecture
+patches and one Ext2 patch.
+
+\begin{table*}[t]
+\caption{Support added to host QEMU on Zephyr. These components have distinct
+roles in the POSIX assessment.}
+\label{tab:port-support}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.19\textwidth}YY@{}}
+\toprule
+Area & Added support & Attribution\\
+\midrule
+Files & Private mapped-file snapshots; seek/I/O/restore; read-only Ext2
+synchronization fix & File adapter and filesystem changes; native POSIX
+behavior remains subject to descriptor and metadata limits.\\
+Memory and faults & Writable/executable JIT aliases; bounded guest mappings;
+checked user accesses & Kernel APIs and QEMU adapters supply the required
+behavior; host mprotect remains unavailable.\\
+Threads and lifetime & One QEMU owner; BQL tracking; deferred RCU callbacks;
+timer exits; worker-local exit target & Pthread APIs supply threads and locks;
+the port defines ownership, event handling, and guest lifetime.\\
+Libraries and build & GLib subset; libfdt/zlib integration; CMake source
+selection and upstream generators & Dependency and build support outside
+the POSIX interface count.\\
+Storage and commands & VirtIO disk attachment; Ext2 mount; UART shell
+commands and argument ownership & Application integration for image loading,
+manual launch, and return to the shell.\\
+EL2 platform & Non-VHE entry; Stage-2 mappings; interrupt/timer handling;
+TLS and SIMD/FP context & Zephyr architecture support used by the new QEMU
+accelerator; independent of POSIX API completeness.\\
+\bottomrule
+\end{tabularx}
+\end{table*}
 
 \subsection{Build from fixed revisions}
 
@@ -212,7 +262,7 @@ calls the same handler through \code{shell\_execute\_cmd()}~\cite{shell}.
 A worker-local exit target converts QEMU loader exits to command results.
 \source{src/qemu/ports/zephyr/console-uart.c} implements the console adapter.
 
-\section{Zephyr POSIX support}
+\section{Host compatibility: POSIX results}
 \label{sec:assessment}
 
 \subsection{Interface inventories}
@@ -441,8 +491,81 @@ The results apply to the fixed revisions, configured resources, and one
 QEMU owner thread. Full POSIX evaluation requires a declared profile and
 tests of its complete interface requirements, error paths, and concurrency.
 
-\section{Simulation and virtualization}
+\section{QEMU implementation changes}
+\label{sec:qemu-changes}
 \label{sec:capabilities}
+
+\subsection{Changes to existing source}
+
+The series contains 14 patches to 34 QEMU files, with 348 inserted lines and
+87 deleted lines. Table~\ref{tab:qemu-patches} groups patches by their main
+purpose. The numbers refer to \source{patches/qemu/series}; the data is in
+\source{docs/data/qemu-patches.csv}.
+
+These counts describe edits to existing files. New host, machine, accelerator,
+and user-runtime modules reside under \source{src/qemu/}. Zephyr architecture
+extensions reside under \source{src/zephyr/}. The Cortex-A72 move accounts
+for 62 inserted and 62 deleted lines, with its register values retained.
+
+\begin{table*}[t]
+\caption{Patches to existing QEMU files, grouped by main purpose. Insertions
+and deletions count physical diff lines; new module files are outside these totals.}
+\label{tab:qemu-patches}
+\small
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.20\textwidth}lrrY@{}}
+\toprule
+Group & Patches & Added & Deleted & QEMU behavior changed\\
+\midrule
+Host interface & 0001--0005 & 68 & 8 & Headers, macro names, page size,
+aligned allocation, file paths, optional timestamps, and deterministic random mode.\\
+CPU and runstate & 0006, 0010 & 66 & 2 & Accelerator initialization,
+non-signal CPU wakeup, guest shutdown/reset, and omitted GDB or migration hooks.\\
+Device, loader, RAM & 0007--0009 & 47 & 1 & Migration registration,
+firmware-configuration services, and host memory-backend assumptions.\\
+TCG code allocation & 0011 & 14 & 1 & JIT buffer allocation through the
+Zephyr writable/executable aliases.\\
+CPU models & 0012--0013 & 67 & 62 & GICv3-only initialization and
+shared Cortex-A72 registration across accelerators.\\
+Linux user execution & 0014 & 86 & 13 & Checked memory access, code
+invalidation, ELF metadata policy, virtual identity, and omitted Linux host services.\\
+\midrule
+Total & 14 patches & 348 & 87 & 34 existing files.\\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\subsection{Core execution changes}
+
+CPU initialization calls the accelerator hook during ARM object construction.
+Runstate changes pass shutdown and reset requests to the QEMU owner.
+CPU wakeup uses the accelerator callback in place of a host signal.
+The RAM path accepts preallocated memory and rejects unsupported remapping.
+
+User TCG sends generated loads and stores through checked helpers.
+Atomic and bulk-memory helpers verify guest access, including DC ZVA.
+Writes to translated code trigger invalidation without host
+\code{mprotect()}. The ELF path uses the available metadata and a virtual
+root identity. It omits the Linux host vDSO, signal trampoline, and core dumps.
+
+\subsection{New modules and build profile}
+
+\source{src/qemu/ports/zephyr/machine.c} defines \code{zephyr-virt}; the bootstrap and
+option modules provide its launch path. The \code{zephyr} accelerator and
+ARM adapter connect QEMU CPU and device state to \code{zhv}.
+\source{src/qemu/ports/zephyr/tcg.c} binds the upstream execution loop to the owner
+thread and Zephyr timers.
+
+The user build adds \source{user.c}, \source{user-memory.c}, and
+\source{user-syscall.c} under \source{src/qemu/ports/zephyr/}.
+It retains upstream TCG and ELF loading but supplies its own syscall dispatch,
+memory policy, and process lifetime. The GLib subset belongs to host
+dependency support in Section~\ref{sec:porting}.
+
+The selected source lists omit migration, general monitor services, and the
+inner GDB server. Other exclusions appear in Section~\ref{sec:implications}.
+QEMU still supplies instruction decoders, translation blocks, QOM/qdev,
+MemoryRegion dispatch, PL011, software GICv3, and ELF parsing.
+BQL and RCU remain part of that runtime.
 
 \subsection{QEMU machine and TCG execution}
 

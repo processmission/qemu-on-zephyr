@@ -1,6 +1,7 @@
 # POSIX interface assessment
 
-This assessment uses Zephyr revision
+This assessment records two aspects of the port: host compatibility and
+additional port support, then QEMU implementation changes. It uses Zephyr revision
 `ba25413e5b6b2661a71db24888f6b89274f1480d` and the QEMU port implementation
 at `2b1161806afe14fe57dec97234f37aac1ea84e5e`. The inventories and native
 experiment were prepared on 9 October 2026. The [paper](paper.tex) includes
@@ -135,11 +136,47 @@ thread semantics, process isolation and real-time bounds were not measured.
 
 ## Assessment workflow
 
-![Two inventories feed provider and configuration inspection, then native probes and guest tests; the resulting reuse, adaptation and unavailable cases are recorded with sources and limitations.](figures/posix-porting-flow.svg)
+![Two assessment paths record host compatibility and QEMU implementation changes. A dashed link connects a host constraint to its effect on the emulator.](figures/posix-porting-flow.svg)
 
 The editable [Mermaid source](figures/posix-porting-flow.mmd) and the inline
-LaTeX rendering retain the same eight nodes and nine edges. SVG and PNG
+LaTeX rendering retain the same eight nodes and seven edges. SVG and PNG
 exports are provided for reuse in documentation and presentation materials.
+
+The host path records native POSIX behavior, project adapters, and support
+from libraries, build tools, storage drivers, and the Zephyr kernel. The QEMU
+path records patches, new modules, changed execution paths, and build
+exclusions. The axes identify cause and implementation. A single change can
+appear on both axes without representing two independent contributions.
+
+## QEMU implementation changes
+
+The [patch ledger](data/qemu-patches.csv) records the 14 patches in
+[patches/qemu/series](../patches/qemu/series). They affect 34 existing files,
+with 348 inserted lines and 87 deleted lines. Counts come from
+`git apply --numstat` for each patch and include physical diff lines.
+New files under `src/qemu/` and Zephyr kernel extensions are outside these
+totals. The Cortex-A72 move contributes 62 additions and 62 deletions while
+retaining its register definitions.
+
+| Main purpose | Patches | Added lines | Deleted lines | QEMU changes |
+| --- | --- | ---: | ---: | --- |
+| Host interface | 0001–0005 | 68 | 8 | Headers, macro handling, allocation, paths, optional timestamps and deterministic random mode |
+| CPU and runstate | 0006, 0010 | 66 | 2 | Accelerator hooks, non-signal wakeup, shutdown/reset and omitted GDB or migration hooks |
+| Device, loader and RAM profile | 0007–0009 | 47 | 1 | Migration registration, firmware services and memory-backend assumptions |
+| TCG code allocation | 0011 | 14 | 1 | JIT allocation through writable/executable aliases |
+| CPU models | 0012–0013 | 67 | 62 | GICv3-only initialization and shared Cortex-A72 registration |
+| Linux user execution | 0014 | 86 | 13 | Checked memory accesses, invalidation, ELF policy, identity and omitted Linux host services |
+
+New QEMU modules supply `zephyr-virt`, the `zephyr` accelerator, the ARM
+adapter, TCG owner-thread integration, command startup, and the user runtime.
+The user build retains TCG and ELF parsing with project syscall, memory and
+lifetime policies. The GLib subset supplies host dependency support.
+Zephyr EL2 code supplies the kernel executor used by the QEMU accelerator.
+
+Host gaps and QEMU mechanisms have distinct evidence. For example, native
+`mprotect` returns `ENOSYS`; the QEMU patch redirects user memory accesses
+through checked helpers. POSIX API behavior belongs to the host assessment.
+The emitter, helper and invalidation changes belong to the QEMU change record.
 
 ## Reproduction and figure provenance
 
