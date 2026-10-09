@@ -49,77 +49,47 @@
 \maketitle
 
 \begin{abstract}
-Porting QEMU to Zephyr subjects an embedded operating system's POSIX layer
-to the requirements of a substantial emulator: threads, synchronization,
-clocks, file descriptors, image loading, executable memory and runtime
-lifecycle. This paper examines that porting process and uses the resulting
-workloads to assess Zephyr's practical POSIX compatibility. The assessment
-separates reusable POSIX services, semantic adaptations, direct kernel
-mechanisms and deliberately excluded QEMU features. It identifies concrete
-boundaries in regular-file positional I/O, file metadata, memory protection,
-signals and process assumptions, while distinguishing those boundaries from
-GLib dependencies and the Linux guest ABI. The implementation retains QEMU
-device models and its Tiny Code Generator (TCG), adds an Arm EL2 execution
-backend, and executes a limited set of static Linux programs through a syscall
-adapter. Recorded Linux, firmware and user-program executions demonstrate
-the selected host contracts working together on an emulated Arm platform.
-The resulting architecture extends Zephyr toward simulation workloads and
-Type-1 hypervisor deployment on application-class SoCs. Physical-board
-performance, standards-wide conformance and production isolation remain
-outside the reported evidence.
+QEMU runs inside Zephyr with device models, the Tiny Code Generator (TCG),
+and an Arm EL2 accelerator. The port reuses POSIX threads, clocks, and file
+operations. File mappings, positional I/O, signals, and process lifetime
+require adapters or restricted behavior. Source inspection, native API
+probes, and guest executions identify these limits.
+
+The Zephyr catalog lists 393 interfaces, with qualifications or missing
+support labels for 104 entries. A separate audit of 50 host interfaces finds
+31 reused APIs, eight adaptations, two metadata limits, and nine unavailable
+process or signal extensions. Tests execute Linux, firmware, and static
+Linux programs on an outer QEMU platform. The EL2 backend supplies mechanisms
+for a Type-1 hypervisor. Physical-board performance, full POSIX conformance,
+and production isolation require further evaluation.
 \end{abstract}
 
 \noindent\textbf{Keywords:} Zephyr; POSIX compatibility; QEMU porting;
 AArch64; TCG; Type-1 hypervisor.
 
-\section{QEMU as a POSIX compatibility workload}
+\section{QEMU as a POSIX workload}
 \label{sec:introduction}
 
-A large emulator exercises an operating-system interface through sustained
-interactions among subsystems. CPU realization allocates and initializes
-objects, image loaders combine metadata queries with positioned reads,
-translation engines manage executable code and invalidation, and execution
-loops coordinate timers, wakeups and shutdown. These interactions expose
-assumptions that an isolated successful API call can leave unexamined.
+QEMU combines POSIX services with device models, memory allocation, image
+loaders, and generated code~\cite{bellard}. These components depend on file
+metadata, descriptor offsets, synchronization, and executable memory. A guest
+boot exercises their interactions across the host interface.
 
-QEMU's Unix host interface makes extensive use of POSIX facilities,
-alongside its own portability abstractions and library dependencies. Its
-architecture also separates complete-machine execution from Linux
-user-program execution~\cite{bellard}. That division supplies several
-workloads for studying the host boundary.
+Zephyr links applications and kernel code into one image. Its configuration
+and C library determine which POSIX services the application can
+use~\cite{zephyr-posix}. The port must account for API behavior, resource
+limits, and this shared runtime. The evaluation records direct API use,
+project adaptations, and missing behavior for the fixed source revisions.
 
-Zephyr provides a configurable POSIX subset within an RTOS. Applications and
-kernel code are normally linked into one artifact; the enabled profile and
-libc determine the services available to that application. Portability
-therefore depends on configuration, API semantics, resource limits and the
-runtime model in which calls occur~\cite{zephyr-posix}.
-
-The project uses QEMU as an integration workload with three objectives:
-\begin{enumerate}
-  \item Identify which host requirements can use enabled Zephyr POSIX services.
-  \item Make semantic adaptations and unsupported requirements explicit.
-  \item Demonstrate the retained emulator components through Linux, firmware
-    and Linux ABI program execution.
-\end{enumerate}
-
-The assessment is specific to the pinned source, selected configuration and
-exercised paths. A successful guest boot supplies application-level evidence
-for the configured system. Standards-wide conformance requires a separate
-requirement inventory and semantic test suite.
-
-\section{Assessment frame}
+\section{Assessment scope}
 \label{sec:frame}
 
-The study distinguishes three interfaces: the host POSIX API, QEMU and
-library contracts, and the guest Linux ABI. For each requirement, it records
-the pinned implementation, the selected adaptation, the evidence that
-exercises it, and the limits of that evidence. Source inspection establishes
-details such as an explicit \code{ENOSYS} return. Runtime tests establish
-behavior along their actual execution paths.
-
-Figure~\ref{fig:assessment-flow} shows how the inventories, source checks and
-runtime observations feed the assessment. The source catalog and the QEMU
-audit use separate denominators, defined in Section~\ref{sec:inventory}.
+The assessment separates the host POSIX API, QEMU library requirements, and
+the guest Linux ABI. Each finding records its implementation, configuration,
+adapter, and test result. Source inspection identifies code paths such as
+\code{ENOSYS} returns. Runtime observations establish behavior for the
+executed inputs. Figure~\ref{fig:assessment-flow} gives the workflow;
+Section~\ref{sec:inventory} defines the two inventory denominators.
 
 \begin{figure*}[t]
 \centering
@@ -156,148 +126,125 @@ configuration, evidence and limitations.}
 
 \subsection{The host POSIX interface}
 
-This is the interface QEMU itself consumes inside Zephyr: pthread operations,
-clocks, file operations and related host services. Its assessment concerns
-the behavior that Zephyr and the selected libc supply to QEMU. The application
-enables POSIX threads and files, compiler TLS and Picolibc, and configures
-finite pools for threads, mutexes, condition variables and descriptors.
-The artifact records these selections in
+QEMU calls Zephyr and Picolibc for threads, clocks, files, and related host
+services. The application enables compiler TLS and sets finite limits for
+threads, mutexes, condition variables, and descriptors. These settings are in
 \source{apps/qemu_linux/prj.conf} and \source{zephyr/Kconfig}.
 
-\subsection{QEMU and library contracts}
+\subsection{QEMU library requirements}
 
-The QEMU Object Model (QOM), MemoryRegion, the big QEMU lock (BQL),
-read-copy-update (RCU), GLib containers and TCG are QEMU or library contracts.
-Their host requirements are assessed separately from POSIX API coverage.
-The port's GLib subset has differential tests. Disabling a QEMU subsystem
-such as migration describes the selected port surface; additional evidence
-would be needed to attribute that exclusion to a missing Zephyr POSIX service.
+QEMU uses the QEMU Object Model (QOM), MemoryRegion, the big QEMU lock (BQL),
+and read-copy-update (RCU). The port includes GLib containers and TCG.
+The GLib tests record library behavior. Feature exclusions, such as
+migration, describe this QEMU build. They require source analysis before
+attribution to a missing POSIX service.
 
 \subsection{The guest Linux ABI}
 
-In user mode, a guest program issues Linux AArch64 syscall numbers. A project
-adapter interprets those requests and invokes available host operations.
-Zephyr has its own build-generated kernel syscall identifiers and a POSIX
-library interface~\cite{zephyr-implementation}. The Linux ABI adapter is an
-additional compatibility layer, and its syscall tests evaluate that layer.
-Its implementation is \source{src/qemu/ports/zephyr/user-syscall.c}.
+User programs issue Linux AArch64 syscall numbers. Zephyr uses kernel syscall
+identifiers generated at build time~\cite{zephyr-implementation}.
+\source{src/qemu/ports/zephyr/user-syscall.c} translates the Linux ABI to host
+operations. Guest syscall tests examine this adapter and the host services
+that it calls.
 
 \section{Porting method}
 \label{sec:porting}
 
-\subsection{Establish a reproducible build boundary}
+\subsection{Build from fixed revisions}
 
-The build starts from pinned QEMU, Zephyr, dtc and zlib revisions. It exports
-those sources into \source{build/sources/}, applies ordered patches, and
-overlays new implementation files. Zephyr CMake selects the QEMU sources and
-invokes the original QAPI, trace and instruction-decoder generators. The
-upstream checkouts remain clean. The manifest is \source{west/west.yml}; the
-module build is \source{zephyr/CMakeLists.txt}.
+\source{west/west.yml} fixes the QEMU, Zephyr, dtc, and zlib revisions.
+The build copies these sources to \source{build/sources/}, applies the patch
+series, and adds the port files. \source{zephyr/CMakeLists.txt} selects QEMU
+sources and runs the upstream QAPI, trace, and instruction decoder generators.
+The build leaves the upstream checkouts unchanged.
 
-The port defines a Zephyr host environment in QEMU's platform abstraction.
-Header selection, page-size discovery and macro names require explicit
-handling: Zephyr's numeric configuration macros and QEMU's macro conventions
-must retain their respective meanings. Aligned allocations use the selected
-libc with size rounding and overflow checks. These are compiler, build and
-C-library adaptations adjacent to the POSIX interface. They are implemented
-in the host configuration and the host-header and allocation patches.
+The host configuration selects headers and page size definitions. Macro
+adapters preserve the different configuration conventions of QEMU and
+Zephyr. Aligned allocation uses the C library after size rounding and an
+overflow check.
 
-\subsection{Retain an executable QEMU component surface}
+\subsection{Select and verify components}
 
-The system source set retains ARM CPUs, QOM/qdev, MemoryRegion dispatch,
-PL011, a software GICv3 and the ARM loaders. A device-model probe exercises
-QOM construction and PL011 register accesses on Zephyr. This supplies a
-runtime checkpoint for the object, allocation and device-dispatch layers
-before interpreting the results of a complete guest workload. The probe is
-\source{apps/qemu_probe/}; the machine implementation is
-\source{src/qemu/ports/zephyr/machine.c}.
+The system build includes ARM CPUs, QOM/qdev, MemoryRegion, PL011, a software
+GICv3, and ARM loaders. The probe in \source{apps/qemu_probe/} constructs QOM
+objects and reads and writes PL011 registers.
+\source{src/qemu/ports/zephyr/machine.c} defines the guest machine.
 
-The selected GLib interface supplies data structures and utility operations
-needed by that source set. Its differential test executes the local
-implementation and the development host's GLib with matching inputs,
-including allocation-overflow behavior. The result supports those exercised
-library semantics. Full GLib compatibility and POSIX conformance would each
-require their own evaluations. The implementation and tests are recorded in
-\source{src/qemu/ports/zephyr/glib/} and \source{tests/glib/}.
+The GLib subset supplies the containers and utilities that these sources
+use. Differential tests compare its output with host GLib output for the
+same inputs. The cases include allocation overflow. The implementation is in
+\source{src/qemu/ports/zephyr/glib/}; the tests are in \source{tests/glib/}.
+Their results apply to the exercised library behavior.
 
-\subsection{Give the embedded runtime an owner}
+\subsection{Use one owner thread}
 
-The application uses \code{pthread\_create()} to start a single POSIX worker
-with explicit thread attributes. QEMU mutex and condition-variable wrappers call
-Zephyr's pthread functions. The worker owns model operations, CPU execution,
-timers and deferred reclamation. The port preserves BQL ownership across
-execution transitions and reclaims deferred RCU callbacks at quiescent points
-outside read-side sections. These rules are implemented by the application
-and \source{src/qemu/ports/zephyr/os.c}.
+The application starts one POSIX worker with \code{pthread\_create()} and
+explicit attributes. This worker owns device operations, CPU execution,
+timers, and deferred reclamation. Wrappers call Zephyr pthread functions and
+track BQL ownership across execution transitions. The worker invokes deferred
+RCU callbacks at quiescent points outside read-side sections.
+\source{src/qemu/ports/zephyr/os.c} implements these operations.
 
-This ownership policy is also a semantic precondition for several adapters.
-Private file descriptors permit a seek/read/restore implementation of
-positioned I/O. Single-owner initialization permits bounded handling of
-one-time initialization and RCU readers. Those policies must be revisited
-when adding QEMU threads or shared-descriptor concurrency.
+The adapters depend on this ownership rule. Positional I/O uses private
+descriptors; one-time initialization and RCU operations assume one QEMU owner.
+Additional QEMU threads or shared descriptors would require different
+synchronization.
 
-\subsection{Connect image loading to real storage}
+\subsection{Load files from Ext2}
 
-Outer QEMU supplies VirtIO Block storage. Zephyr mounts Ext2 read-only at
-\source{/images}, and the loader reaches it through the file adapter. Kernel,
-initramfs and ELF data use real filesystem operations. GLib mapped-file
-objects are represented by private file snapshots whose references and
-lifetime are managed by \source{src/qemu/ports/zephyr/file.c}.
+Outer QEMU supplies a VirtIO Block disk. Zephyr mounts its Ext2 filesystem
+read-only at \source{/images}. The loader reads kernel, initramfs, and ELF
+files through \source{src/qemu/ports/zephyr/file.c}. This adapter represents
+GLib mapped files as private snapshots and manages their reference counts.
 
-The Ext2 adaptation makes inode synchronization conditional on mount
-writability. This is a filesystem integration requirement beneath POSIX:
-loader close and synchronization paths must respect the mounted medium's
-read-only contract. The implementation is preserved as an ordered Zephyr
-patch in the artifact.
+The Ext2 patch permits inode synchronization only on writable mounts.
+This preserves the read-only mount during file close and synchronization.
 
-\subsection{Add execution and an explicit command lifecycle}
+\subsection{Control launch and exit}
 
-The system runtime creates the machine, selects its compiled accelerator,
-loads the image and services execution returns. The user runtime uses a
-separate source selection with upstream user TCG and Linux ELF loading.
-Both are exposed through Zephyr shell commands that copy arguments before
-waking the worker.
+System mode creates a machine, selects the compiled accelerator, and loads
+the image. A separate user build includes user TCG and the Linux ELF loader.
+Shell handlers copy command arguments before they wake the QEMU worker.
 
-The shell owns UART input and uses a bypass callback while a guest runs.
-Ctrl-] requests termination, and completion restores the prompt. Automatic
-startup calls the same handler through \code{shell\_execute\_cmd()}~\cite{shell}.
-A worker-local exit target converts QEMU loader exits into command return
-status, giving embedded execution an explicit lifecycle within the surrounding
-RTOS. The console adapter is \source{src/qemu/ports/zephyr/console-uart.c}.
+The shell directs UART input to a bypass callback during guest execution.
+Ctrl-] requests termination; completion restores the prompt. Automatic startup
+calls the same handler through \code{shell\_execute\_cmd()}~\cite{shell}.
+A worker-local exit target converts QEMU loader exits to command results.
+\source{src/qemu/ports/zephyr/console-uart.c} implements the console adapter.
 
-\section{Zephyr POSIX compatibility assessment}
+\section{Zephyr POSIX support}
 \label{sec:assessment}
 
-\subsection{Inventory method and support distribution}
+\subsection{Interface inventories}
 \label{sec:inventory}
 
-Two enumerated inventories support Figure~\ref{fig:posix-inventories}.
-The pinned Zephyr option-group document contains 47 API tables with
-431 rows~\cite{zephyr-catalog}. Removing 12 variables or constants leaves
-419 callable rows. Exact-name deduplication yields 393 interfaces, including
-function-like macros. A qualification takes precedence when one name occurs
-in several groups. This gives 289 unqualified \emph{yes} entries, 53 qualified
-entries and 51 unmarked entries. The qualified category contains 51
-undefined-behavior marks and two UTC-only functions.
+Figure~\ref{fig:posix-inventories} contains two inventories.
+The fixed Zephyr document has 47 API tables and 431 rows~\cite{zephyr-catalog}.
+The extractor removes 12 variables or constants, then removes duplicate
+names from the remaining 419 rows. The result is 393 callable interfaces,
+including function-like macros. A qualified occurrence takes precedence
+over an unqualified occurrence of the same name.
 
-These are documentation labels. Nine unqualified \emph{yes} entries have
-unconditional \code{ENOSYS} implementations in the inspected Zephyr providers:
-\code{pthread\_atfork}, four priority-ceiling functions, two process-scheduling
-queries, \code{mlockall} and \code{munlockall}. Another 30 catalog entries with
-that behavior already carry qualifications. Conversely, unmarked
-\code{fcntl}, \code{lseek} and \code{times} have source implementations.
-The catalog also delegates parts of ISO C to the selected libc without
-enumerating every function. Its 73.5\% unqualified share describes the table
-entries; standards-wide conformance requires a separate evaluation.
+The catalog has 289 unqualified \emph{yes} entries, 53 qualified entries,
+and 51 unmarked entries. The qualified group contains 51 undefined-behavior
+marks and two UTC-only functions. These counts describe documentation status.
+The catalog omits individual functions from some ISO C groups and depends
+on the selected C library.
 
-The second inventory is an explicit 50-contract host-interface audit.
-It covers 41 retained interfaces and adaptation contracts plus nine
-process/signal extension contracts. The extension contracts identify
-capabilities beyond the implemented execution profile; they are not all
-requirements of the current Linux boot. Table~\ref{tab:audit-counts}
-enumerates the categories. The CSV ledger identifies every name, source path
-and qualification. Counts weight each reviewed interface equally and make
-no claim to enumerate all QEMU host dependencies.
+Nine unqualified entries have Zephyr implementations that return
+\code{ENOSYS} for all inputs. They include \code{pthread\_atfork}, four
+priority-ceiling functions, two process-scheduling queries, \code{mlockall},
+and \code{munlockall}. Another 30 entries with this behavior carry
+qualifications. Unmarked \code{fcntl}, \code{lseek}, and \code{times} have
+implementations. The 73.5\% unqualified share measures catalog labels.
+
+The host audit covers 50 interface contracts: 41 retained or adapted
+interfaces and nine process or signal extensions. An interface contract
+defines the behavior a caller requires. The nine extensions lie outside
+the current execution profile; a Linux boot does not require all nine.
+Table~\ref{tab:audit-counts} lists the categories. The CSV records names,
+source paths, and limits. Counts assign equal weight to each interface in
+this audit.
 
 \begin{figure*}[t]
 \centering
@@ -370,12 +317,10 @@ the implemented profile.\\
 
 \subsection{Findings by host requirement}
 
-Table~\ref{tab:posix} associates host requirements with the pinned interface,
-the port treatment and the relevant evidence. ``Adapted'' identifies behavior
-implemented by the port; ``kernel mechanism'' identifies a direct Zephyr
-facility used at that boundary. A successful execution establishes the
-behavior of the combined system. Claims about unadapted Zephyr POSIX behavior
-require evidence for that interface itself.
+Table~\ref{tab:posix} maps host requirements to their implementations and
+tests. An adapted interface uses project code. A kernel mechanism uses a
+Zephyr kernel API. Each result applies to the implementation that supplied
+the behavior.
 
 \begin{table*}[t]
 \caption{Workload-specific POSIX assessment at the pinned Zephyr revision.}
@@ -413,199 +358,152 @@ the port's implemented profile. \\
 
 \subsection{Pthreads and time}
 
-Worker creation uses explicit pthread attributes to select \code{SCHED\_RR}
-and supply the thread's memory region. Mutex and condition operations call
-the corresponding pthread functions. Timed condition waits use an absolute
-deadline: the wrapper reads \code{CLOCK\_REALTIME} through
-\code{clock\_gettime()}, adds the requested duration and normalizes
-nanoseconds.
+Worker attributes select \code{SCHED\_RR} and a supplied memory region.
+Mutex and condition wrappers call pthread functions and examine their return
+codes. Timed waits use an absolute deadline. The wrapper reads
+\code{CLOCK\_REALTIME} through \code{clock\_gettime()}, adds the requested
+duration, and normalizes nanoseconds.
 
-These bindings invoke the host APIs and check their return codes. The
-execution record demonstrates creation of the owner, model locking and
-progress of an independent Zephyr thread while a guest executes. Pthread
-cancellation, priority interactions, multi-owner contention and every
-timed-wait path have not been exhaustively exercised. Source binding and
-observed behavior are therefore reported at different levels of granularity.
+Tests exercise worker creation, model locks, and an independent Zephyr thread
+during guest execution. Full cancellation, priority, and contention semantics
+require separate evaluation. The native probe in
+Section~\ref{sec:native-probe} covers condition notification and timeout.
 
-Clock and scheduler integration also uses direct kernel services. Exit
-requests originate from Zephyr timers; halted execution uses wait/kick
-synchronization. These mechanisms allow the selected QEMU loop to cooperate
-with Zephyr's scheduler~\cite{scheduling}. An observed wakeup or advancing
-timer establishes progress in the tested run. Worst-case latency requires
-separate analysis.
+Zephyr timers request execution exits. Halted execution uses wait/kick
+synchronization so the QEMU loop can cooperate with the
+scheduler~\cite{scheduling}. The recorded runs show host progress; they
+supply no worst-case latency bound.
 
 \subsection{Positioned I/O and descriptor semantics}
 \label{sec:positioned-io}
 
-At the pinned revision, Zephyr's \code{pread()} and \code{pwrite()} pass an
-explicit offset into \code{zvfs\_rw()}. The descriptor layer's
-\code{supports\_pread\_pwrite()} accepts shared-memory descriptors. A positioned
-operation on a regular file therefore reaches an \code{ENOTSUP}
-result~\cite{device-io,zvfs}. QEMU's ELF loading path requires positioned
-regular-file reads, making descriptor semantics material to the port even
-though the API symbols are present.
+Zephyr's \code{pread()} and \code{pwrite()} pass an offset to
+\code{zvfs\_rw()}. Its \code{supports\_pread\_pwrite()} check accepts
+shared-memory descriptors. These calls return \code{ENOTSUP} for regular-file
+descriptors~\cite{device-io,zvfs}.
 
-The project's adapter saves the current offset, seeks, performs I/O and
-restores the offset. Its contract relies on QEMU owning these descriptors on
-one worker. ELF loading and private file-mapping checks exercise this path.
-Concurrent positioned access through a shared open-file description would
-require a stronger implementation and separate tests. The evaluation credits
-the port adapter for the supported behavior.
+QEMU's ELF loader requires positional reads from regular files. The adapter
+saves the descriptor offset, seeks, does the I/O, and restores the offset.
+This sequence assumes one worker owns the descriptor. ELF tests and tests of
+private mappings exercise that sequence. Concurrent access through a shared descriptor
+requires additional synchronization.
 
 \subsection{File metadata and loader policy}
 
-The pinned \code{stat()} path obtains a Zephyr filesystem entry and reports
-its type and size. Its mode contains \code{S\_IFREG} or \code{S\_IFDIR},
-without execution permission bits~\cite{zephyr-stat}. The selected Linux ELF
-loader cannot apply its conventional execute-bit policy using that metadata.
-The adaptation accepts an explicitly requested regular executable and retains
-ELF architecture and address-range validation.
+\code{stat()} returns file type and size. The mode contains
+\code{S\_IFREG} or \code{S\_IFDIR}, but no execute-permission
+bits~\cite{zephyr-stat}. The ELF loader accepts a regular file
+named in the launch command without an execute-bit check. It retains
+architecture and address-range validation.
 
-This finding concerns the generic filesystem/POSIX boundary used by the
-port. On-disk permission metadata and the information exposed by a host API
-are separate concerns. Consumers need the relevant policy information and
-semantics to be carried through the interface they actually use.
+The native probe found mode 0755 in the Ext2 inode and zero permission bits
+in the returned metadata. The host API omits permission data that the
+filesystem stores.
 
 \subsection{Memory protection and fault delivery}
 
-The host protection function \code{mprotect()} returns \code{ENOSYS} at the
-pinned revision~\cite{zephyr-mprotect}. The user configuration explicitly
-disables POSIX mapped files. The memory behavior demonstrated by this port
-is implemented through a defined combination of kernel mechanisms and QEMU
+Host \code{mprotect()} returns \code{ENOSYS}~\cite{zephyr-mprotect}.
+User mode disables POSIX mapped files and uses kernel APIs with QEMU page
 metadata.
 
-For generated code, an aligned backing buffer receives distinct writable
-and executable mappings using \code{k\_mem\_map\_phys\_bare()}. The TCG
-adapter uses the upstream cache-synchronization machinery to publish code
-through these aliases. The configured buffer size is 16~MiB. The system
-adapter is \source{src/qemu/ports/zephyr/tcg.c}.
+The TCG adapter maps a 16~MiB buffer through distinct writable and executable
+aliases with \code{k\_mem\_map\_phys\_bare()}. TCG synchronizes caches before
+it executes code through the executable alias.
+\source{src/qemu/ports/zephyr/tcg.c} contains the system adapter.
 
-For Linux user memory, the runtime supplies a bounded 64~MiB region and
-implements mapping operations with QEMU page metadata. Generated user loads
-and stores pass through checked helpers; the integration includes atomic
-and bulk-memory paths such as DC ZVA. Writes to translated code invoke QEMU's
-invalidation mechanism. Invalid accesses terminate the emulated process with
-a signal-derived status. The memory adapter is
+The user runtime reserves a 64~MiB address region. QEMU page metadata controls
+its mappings. Checked helpers handle generated loads, stores, atomic
+operations, and bulk operations such as DC ZVA. Writes to translated code
+invalidate affected translations. Invalid accesses stop the emulated process
+with a signal-derived status. Fault tests exercise this behavior in
 \source{src/qemu/ports/zephyr/user-memory.c}.
-
-The resulting fault tests validate the project adapter. A native POSIX
-\code{mprotect()} assessment would instead need to exercise that Zephyr
-entry point and its prescribed semantics directly.
 
 \subsection{Signals, identity and process lifetime}
 
-The pinned signal implementation provides signal-set operations while
-several process-signal functions, including \code{sigaction()} and
-\code{kill()}, return \code{ENOSYS}~\cite{zephyr-signals}. Enabling
-signal-related configuration alone therefore cannot establish the
-host-fault-delivery model expected by a Linux user emulator. The port maps
-the selected no-mask-save jump paths to \code{setjmp}/\code{longjmp} and
-detects guest faults through its memory helpers.
+Zephyr implements signal-set operations. Process-signal functions such as
+\code{sigaction()} and \code{kill()} return \code{ENOSYS}~\cite{zephyr-signals}.
+The port detects guest faults through memory helpers. It uses
+\code{setjmp}/\code{longjmp} for calls with \code{savesigs == 0}.
 
-Guest Linux PID, UID and signal contracts are distinct from host pthreads
-and Zephyr task identity. The user adapter assigns a positive process ID per
-launch and a virtual root identity. Unsupported Linux calls return
-\code{ENOSYS}. The implemented guest ABI excludes installed signal handlers
-and guest threads. Zephyr separately offers pthread and socket interfaces,
-so their omission from this guest ABI is a port-scope decision.
+The user adapter assigns a positive process ID for each launch and a virtual
+root identity. Unsupported Linux calls return \code{ENOSYS}. Guest threads
+and installed signal handlers lie outside this ABI. Zephyr has pthread and
+socket APIs; their availability does not add the corresponding guest
+interfaces.
 
-System execution retains its initialized machine and global QEMU state after
-the loop returns. A new VM requires a Zephyr reboot. User execution closes
-descriptors and resets mappings, CPU and translation state for successive
-programs. These rules give the embedded runtime explicit ownership of the
-lifecycle normally supplied by a standalone emulator's host process.
+System mode retains its machine and global QEMU state after execution ends.
+A new VM requires a Zephyr reboot. User mode closes descriptors and resets
+mappings, CPU state, and translation state for each program.
 
 \subsection{Scope of the assessment}
 
-Threads, selected synchronization paths, clocks and basic file operations
-form a usable foundation for the retained workload. Positioned I/O, metadata,
-memory protection, signals and process assumptions identify interfaces that
-need semantic qualification or adaptation in this build. Finite resource
-settings and single-owner execution are part of the result.
+The results apply to the fixed revisions, configured resources, and one
+QEMU owner thread. Full POSIX evaluation requires a declared profile and
+tests of its complete interface requirements, error paths, and concurrency.
 
-A broader maturity assessment would require a declared POSIX profile, a
-complete requirement inventory, targeted semantic tests and concurrency
-coverage. The current evidence supports workload compatibility for the
-documented configuration and identifies concrete requirements for API
-qualification and implementation.
-
-\section{Simulation and virtualization capabilities}
+\section{Simulation and virtualization}
 \label{sec:capabilities}
 
 \subsection{QEMU machine and TCG execution}
 
-QEMU's TCG translates guest instructions into host code and reuses translation
+TCG translates guest instructions into host code and reuses translation
 blocks associated with CPU state. System emulation uses a software MMU and
-routes MMIO through device models~\cite{tcg}.
+device models for MMIO~\cite{tcg}.
 
-The project combines that engine with ARM CPU objects, PL011, a software
-GICv3 and the ARM Linux/ELF loaders. Its \code{zephyr-virt} machine provides
-one vCPU and 256~MiB RAM at \code{0x40000000}, with PL011 at
-\code{0x09000000}. System TCG runs on an EL1 Zephyr host. A one-millisecond
-timer requests execution exits so the owner can service timers and console
-work. This supplies a software simulation path within the RTOS.
+The \code{zephyr-virt} machine has one ARM vCPU, a software GICv3, and
+256~MiB RAM at \code{0x40000000}. PL011 is at \code{0x09000000}.
+The ARM loaders read Linux and ELF images. System TCG runs on an EL1 Zephyr
+host. A one-millisecond timer requests execution exits so the owner can
+service timers and console I/O.
 
-\subsection{EL2 execution and the Type-1 direction}
+\subsection{EL2 execution}
 
-Arm virtualization provides EL2 controls for trapping and Stage-2 address
-translation. These mechanisms let a hypervisor define a guest's resource
-view and handle accesses that require emulation~\cite{arm-virtualization}.
+Arm EL2 supplies traps and Stage-2 address translation for guest resource
+control~\cite{arm-virtualization}. The \code{zephyr} accelerator runs on a
+non-VHE EL2 host and calls the \code{zhv} kernel executor. This executor
+manages guest transitions, Stage-2 mappings, registers, TLS, SIMD/FP state,
+and timers.
 
-The native profile places Zephyr at non-VHE EL2 and connects the QEMU
-\code{zephyr} accelerator to a kernel executor named \code{zhv}. The executor
-handles guest entry/exit, Stage-2 mappings, registers, TLS, SIMD/FP state and
-timers. The QEMU ARM adapter dispatches MMIO, system-register and PSCI exits
-and uses software GICv3 state for interrupt delivery. Native CPU realization
-checks the relevant host MIDR fields against the selected model.
+The QEMU ARM adapter handles MMIO, system-register, and PSCI exits. It uses
+software GICv3 state to deliver interrupts and compares host MIDR fields
+with the requested CPU model. The executor is in
+\source{src/zephyr/arch/arm64/core/hypervisor/}; the adapter is in
+\source{src/qemu/target/arm/zephyr.c}.
 
-This architecture gives Zephyr the execution control and device-model layer
-needed to pursue a Type-1 hypervisor role on application-class SoCs. Such a
-deployment places Zephyr in control of the physical virtualization interface.
-The present experiments use an outer QEMU \code{virt} platform with
-TCG~\cite{virt}, so the native backend exercises virtualized Arm mechanisms
-within that development environment. A physical deployment additionally
-requires board support, memory and interrupt configuration, and hardware
-validation.
+These components supply mechanisms for a Type-1 hypervisor on an
+application-class SoC. The recorded runs use an outer QEMU \code{virt}
+machine with TCG~\cite{virt}. Deployment on hardware requires board support,
+memory and interrupt configuration, and tests of the physical virtualization
+interface. System accelerators and user mode require separate firmware builds.
 
-The executor source is under
-\source{src/zephyr/arch/arm64/core/hypervisor/}; the QEMU ARM adapter is
-\source{src/qemu/target/arm/zephyr.c}. System accelerator selection and user
-mode are separate firmware builds.
+\subsection{Linux user execution}
 
-\subsection{Linux user execution as an additional workload}
+User mode reuses QEMU user TCG and the Linux ELF loader~\cite{qemu-user}.
+At \code{svc}, the adapter reads the syscall number from \code{x8} and
+arguments from \code{x0} through \code{x5}. It writes the result to \code{x0}.
+The implemented calls handle files, private mappings, clocks, entropy, and
+selected process metadata.
 
-The user path reuses QEMU user TCG and its Linux ELF loader. At \code{svc},
-it reads the syscall number from \code{x8}, supplies arguments from
-\code{x0} through \code{x5} to the adapter and writes the result to \code{x0}.
-Files, private memory mappings, clocks, entropy and selected process metadata
-are supported. QEMU's user-emulation documentation supplies the general
-model~\cite{qemu-user}; the Zephyr-specific syscall surface is defined by
-the project implementation.
+The installed SDK builds the default static ELF. A regression program adds
+file I/O, mapping, and fault cases. These workloads exercise the Linux ABI
+adapter and its host services.
 
-The default program is a static Linux ABI ELF built with the installed SDK.
-A larger regression program exercises file I/O, mappings and faults. These
-programs extend the workload beyond a kernel boot, while retaining the
-distinction between host POSIX compatibility and guest Linux ABI support.
-
-\section{Evaluation method and recorded results}
+\section{Methods and results}
 \label{sec:evaluation}
 
-\subsection{Direct POSIX provider experiment}
+\subsection{Direct POSIX calls}
 \label{sec:native-probe}
 
-A standalone Zephyr application calls the native providers with QEMU port
-adapters disabled. It uses Picolibc, POSIX threads/files/signals, memory
-protection enabled, the prepared Zephyr source tree and the read-only VirtIO
-Ext2 disk. It executes on Cortex-A53 at EL2 under SDK QEMU 10.0.2 with TCG.
-The inspected POSIX provider files match the pinned upstream source.
-The experiment and its observations are preserved under
-\source{docs/experiments/posix-native/}.
+The standalone probe calls Zephyr and Picolibc with QEMU port adapters
+disabled. It enables POSIX threads, files, signals, and memory protection.
+It reads the VirtIO Ext2 disk on Cortex-A53 at EL2 under SDK QEMU 10.0.2 with
+TCG. The POSIX provider files match the fixed upstream revision.
+\source{docs/experiments/posix-native/} contains the probe and its results.
 
-The configured public headers omit declarations for \code{pread},
-\code{pwrite}, \code{mprotect} and \code{pause}. The probe supplies declarations
-matching the inspected definitions to execute those actual providers. Their
-runtime results do not establish source portability through unmodified public
-headers. Table~\ref{tab:native-probe} records the observed semantics.
+The configured headers omit declarations for \code{pread}, \code{pwrite},
+\code{mprotect}, and \code{pause}. The probe adds declarations that match the
+provider definitions. Table~\ref{tab:native-probe} records their runtime
+behavior with this prerequisite.
 
 \begin{table*}[t]
 \caption{Direct Zephyr/Picolibc observations from the standalone probe.
@@ -635,28 +533,25 @@ getpid returned the provider's constant 42.\\
 \end{tabularx}
 \end{table*}
 
-The target printed its error constants: \code{ENOSYS}=88,
-\code{ENOTSUP}=134 and \code{ETIMEDOUT}=116. The recorded observations establish
-behavior for the stated inputs and provider configuration. Thread fairness,
-signal delivery, writable filesystems and complete POSIX semantics remain
-outside this experiment.
+The target printed \code{ENOSYS}=88, \code{ENOTSUP}=134, and
+\code{ETIMEDOUT}=116. These observations apply to the stated inputs and
+configuration. The experiment excludes thread fairness, signal delivery,
+and writable filesystems.
 
 \subsection{Source and environment}
 
-The implementation baseline is repository commit
-\source{2b1161806afe14fe57dec97234f37aac1ea84e5e}. The evaluation combines source
-inspection with recorded executions and checked-in acceptance workloads.
-Run reports are versioned in \source{docs/validation.md}. Raw console logs
-are generated locally and excluded from Git. The record establishes successful
-finite executions; repetition counts for failure-rate or timing-distribution
-estimates are not available.
+The implementation baseline is
+\source{2b1161806afe14fe57dec97234f37aac1ea84e5e}.
+\source{docs/validation.md} records the execution results; console logs stay
+in local build directories. The record lacks repetition counts for estimates
+of failure rates or timing distributions.
 
-Table~\ref{tab:environment} records the principal inputs. The manifest also
-pins dtc and zlib, and \source{docs/guest-assets.md} records image hashes.
-Default configured capacities include 512~MiB outer RAM, 256~MiB system guest
-RAM, a 64~MiB user address region, a 16~MiB TCG code buffer, and a 32~MiB native
-or 96~MiB TCG/user C-library arena. These are configuration values; peak
-memory consumption requires separate measurement.
+Table~\ref{tab:environment} lists the source and tool versions. The manifest
+fixes dtc and zlib revisions; \source{docs/guest-assets.md} records image
+hashes. Configured memory includes 512~MiB for outer QEMU, 256~MiB for the
+system guest, and a 64~MiB user address region. TCG has a 16~MiB code buffer.
+The C-library arena is 32~MiB for the native backend and 96~MiB for TCG/user
+mode. The tests did not measure peak memory use.
 
 \begin{table*}[t]
 \caption{Recorded source, environment and workload inputs.}
@@ -677,16 +572,14 @@ User workloads & Default hello, Linux ABI regression program and static glibc pr
 \end{tabularx}
 \end{table*}
 
-\subsection{Evidence and attribution}
+\subsection{Guest and component tests}
 
-Table~\ref{tab:evidence} associates the observed behavior with the interface
-being evaluated. The Linux checker reads the architectural timer interrupt
-count, sleeps in the guest and confirms that the count advances. It runs a
-busy loop for approximately eight guest-uptime seconds and queries the
-restored Zephyr shell after poweroff. Positive EL0 and MMU-on samples show
-that execution reached those states. The counters sample execution returns;
-they do not measure instruction totals or processor utilization. The checker
-is \source{apps/qemu_linux/check.py}.
+Table~\ref{tab:evidence} lists the guest and component results.
+\source{apps/qemu_linux/check.py} verifies timer interrupt growth across a
+guest sleep. It runs a busy loop for about eight guest-uptime seconds and
+queries the Zephyr shell after poweroff. EL0 and MMU-on counters record
+execution returns in those states. They count samples, not instructions or
+processor utilization.
 
 \begin{table*}[t]
 \caption{Recorded functional evidence and its attribution.}
@@ -716,75 +609,59 @@ behavior & Evidence applies to the exercised adapters and library semantics. \\
 \end{tabularx}
 \end{table*}
 
-The independent observer sleeps for one second between updates. The checker
-requires progress and a maximum recorded gap below its 4000~ms acceptance
-threshold. This is a finite-run health criterion. Worst-case integration
-timing would also require analysis of initialization, interrupt masking,
-allocation, device operations and the outer emulator's scheduling.
+An independent observer sleeps for one second between updates. Acceptance
+requires observer progress and a maximum gap below the 4000~ms threshold.
+A worst-case bound requires analysis of initialization, interrupt masking, allocation,
+device operations, and scheduling by outer QEMU.
 
-User acceptance executes real AArch64 instructions and Linux syscall numbers.
-It checks private file mappings, self-modifying code, memory permissions and
-termination, then starts another program. The default hello ELF also executed
-directly in Ubuntu AArch64. Component evidence includes 196 payload-filesystem
-checks, 184 matching GLib differential output lines and the recorded
-architecture/FPU/executor cases. These counts describe the existing checks;
-they provide no coverage percentage. User acceptance is implemented by
-\source{tests/user/check.py} and \source{tests/user/check_default.py}.
+User tests execute AArch64 instructions and Linux syscalls. They cover private
+mappings, self-modifying code, permissions, faults, and successive program
+launches. The default hello ELF ran on Ubuntu AArch64. Component results
+include 196 filesystem checks, 184 matching GLib output lines, and the
+architecture/FPU/executor cases. These counts describe the tests performed.
+\source{tests/user/check.py} and \source{tests/user/check_default.py} contain
+the user tests.
 
 \subsection{File updates and descriptor lifetime}
 
-External files are assembled into a read-only Ext2 image using source-content
-fingerprints and atomic replacement of the completed disk. Outer QEMU keeps
-its attached disk for the session. Restarting Zephyr resets inner runtime
-state, while the outer file attachment remains. The disk builder is
-\source{scripts/guest_disk.py}.
+\source{scripts/guest_disk.py} fingerprints source contents and replaces a
+completed Ext2 image by atomic rename. Outer QEMU holds the attached disk
+for its session. A Zephyr reboot resets the inner runtime and retains that
+disk attachment.
 
-An update experiment published two checked-in workloads under one path:
-hello first, then the Linux ABI regression program. After the host binary and
-disk were replaced, the existing session still executed hello, including
-after a Zephyr reboot. A new outer QEMU process executed the ABI workload
-and returned its deliberate success-test status of 7. This confirms the
-documented activation boundary for that workflow and evaluates the storage
-and lifecycle integration.
+The update experiment replaced hello with the Linux ABI regression program
+at the same path, then regenerated the disk. The existing session continued
+to run hello after a Zephyr reboot. A new outer QEMU process ran the
+replacement and returned its expected status 7. Updated disk contents
+require a restart of outer QEMU.
 
-\section{Implications for POSIX maturity and deployment}
+\section{Limits and deployment}
 \label{sec:implications}
 
-The adaptation matrix identifies contracts that determine application
-portability. Regular-file positioned I/O needs appropriate offset semantics;
-filesystem metadata must expose the policy information consumers require;
-protection and signal interfaces need explicit qualification; and application
-lifetime must be reconciled with an embedded runtime.
+The port needs adapters for positional I/O, incomplete metadata, executable
+memory, signals, and process lifetime. Evaluation must identify which behavior
+comes from Zephyr POSIX, the C library, a kernel API, or project code.
+Normal results, error paths, and concurrency each require tests.
 
-Future compatibility evaluations should attribute each success to its actual
-provider: Zephyr POSIX, the selected libc, a kernel API or a project adapter.
-They should exercise the relevant error and concurrency semantics as well as
-the normal path. A QEMU feature excluded by configuration should remain
-separate from an unavailable POSIX function in the resulting assessment.
+System mode permits one VM and one vCPU per Zephyr boot. User mode permits
+one static, single-threaded program at a time. The profile excludes migration,
+hotplug, guest EL2/EL3, general signal delivery, dynamic linking, and guest
+process creation.
 
-The current artifact restricts system execution to one VM and one vCPU per
-Zephyr boot. User execution permits one static, single-threaded program at a
-time. Migration, hotplug, guest EL2/EL3, general signal delivery, dynamic
-linking and guest process creation are outside the implemented profile.
-The input disk is a snapshot; updated files become active after regeneration
-and an outer QEMU restart.
+Tests use an emulated Arm platform. The record contains no physical-board
+measurements of throughput, interrupt latency, energy, or memory bandwidth.
+Fault tests cover selected cases; image parsers and device models still run
+inside the Zephyr application. Production isolation and real-time bounds
+require separate evaluation. A physical SoC also needs a BSP and configured
+memory, GIC, timer, and exception levels.
 
-The experiments use an emulated Arm platform. The evaluation record contains
-no physical-board throughput, interrupt-latency, energy or memory-bandwidth
-measurements. Security testing covers selected faults and mechanisms; input
-parsing and model code still run within the Zephyr application environment.
-A production isolation claim or a real-time bound requires a separate
-assessment. Deployment on a high-performance SoC also requires its BSP,
-memory layout, GIC, timer and exception-level configuration.
-
-\section{Artifact and reproduction}
+\section{Reproduction}
 \label{sec:artifact}
 
-The artifact includes pinned upstream inputs, ordered source patches, new
-host and executor code, sample programs and acceptance scripts~\cite{project}.
-Supported development hosts are Linux x86\_64/AArch64 and macOS Apple Silicon,
-with Python 3.12 or newer. After checking out the implementation revision in
-Section~\ref{sec:evaluation}, the main paths can be reproduced as follows:
+The repository contains fixed upstream revisions, patches, host and executor
+code, samples, and acceptance scripts~\cite{project}. Builds require Linux
+x86\_64/AArch64 or macOS Apple Silicon and Python 3.12 or newer.
+Check out the revision in Section~\ref{sec:evaluation}. Then run:
 
 \begin{quote}
 \begin{minipage}{\linewidth}
@@ -803,28 +680,24 @@ make test-arch
 \end{minipage}
 \end{quote}
 
-The documented A57 and A72 selections reproduce the additional CPU-model
-coverage. Each run should record its repository revision, SDK and outer QEMU
-versions, configuration and console transcript. The Python environment
-includes dependencies from the pinned Zephyr requirements; the complete
-transitive environment is not locked.
+Use the documented A57 and A72 selections for those CPU models. Record the
+repository revision, tool versions, configuration, and console output.
+The build uses Python requirements from the fixed Zephyr revision.
+These files do not lock the complete dependency tree.
 
-English and Chinese usage guidelines in \source{docs/guidelines.md} and
-\source{docs/guidelines.zh-CN.md} specify installation, program updates and
-restart procedures. The principal assessment sources are the host runtime,
-file adapter, host header, module source lists and the pinned Zephyr
-implementations cited in Section~\ref{sec:assessment}. Source references and
-validation records were consulted on 9 October 2026.
+\source{docs/guidelines.md} and \source{docs/guidelines.zh-CN.md} give
+instructions for installation, file updates, and restarts. Section~\ref{sec:assessment}
+cites the source implementations. The reference and validation records have
+an access date of 9 October 2026.
 
-The inventory extractor uses Docutils to parse the upstream tables and
-preserves excluded rows, duplicate occurrences, source hashes and every
-support cell. The reviewed host ledger is separately versioned. Running
-\source{scripts/posix_figures.py} with the dependencies in
-\source{docs/requirements-figures.txt} regenerates the CSV inventory, count
-manifest and Matplotlib SVG/PNG plots. The Mermaid flow source is
-\source{docs/figures/posix-porting-flow.mmd}; the manuscript embeds the
-corresponding vector rendering and numerical chart data. Figure preparation
-uses the Scientific Visualization workflow~\cite{scientific-skills}.
+Docutils extracts the upstream tables. The generated catalog retains support
+cells, exclusions, duplicate occurrences, and source hashes. The host audit
+has its own versioned CSV. \source{scripts/posix_figures.py} regenerates the
+inventories and Matplotlib plots with \source{docs/requirements-figures.txt}.
+
+The flow source is \source{docs/figures/posix-porting-flow.mmd}. This manuscript
+contains the vector graphics and chart values. Figure preparation uses the
+Scientific Visualization workflow~\cite{scientific-skills}.
 
 \begin{thebibliography}{16}
 \small
