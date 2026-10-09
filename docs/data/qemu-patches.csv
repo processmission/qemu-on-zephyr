@@ -13,3 +13,5 @@ patch,filename,group,files,insertions,deletions
 0012,0012-target-arm-limit-zephyr-cpus-to-the-gicv3-interface.patch,CPU models,1,5,0
 0013,0013-target-arm-share-cortex-a72-across-accelerators.patch,CPU models,2,62,62
 0014,0014-linux-user-support-zephyr-execution.patch,Linux user execution,8,86,13
+0015,0015-target-arm-expose-native-host-cpu-on-zephyr.patch,CPU models,1,8,1
+0016,0016-target-arm-preserve-fractional-counter-rates.patch,CPU and runstate,4,26,52

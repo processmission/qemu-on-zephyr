@@ -36,7 +36,8 @@ repeated options and conflicting accelerator selections fail before building.
 Each option occurs once; accelerator fallback lists are unsupported.
 
 `QEMU_ARGS` is parsed as quoted argument text. Make exports it through the
-environment. The guest machine provides one VM, one vCPU and 256 MiB RAM.
+environment. The guest machine provides one VM, one vCPU and 256 MiB RAM by
+default. The native NanoJev profile reserves 3 GiB RAM at build time.
 Its implemented options are listed above.
 
 `ACCEL` and `CPU` provide defaults for options omitted from `QEMU_ARGS`.
@@ -46,10 +47,28 @@ variable. With no overrides, the profile is `zephyr-virt`, `zephyr`, Cortex-A53.
 
 | `-accel` | Zephyr host | Guest CPU models | Execution |
 | --- | --- | --- | --- |
-| `zephyr` | EL2, virtualization enabled | Cortex-A53, A57, A72 matching the host | Native ARM guest entry through `zhv` |
+| `zephyr` | EL2, virtualization enabled | `host`, or Cortex-A53/A57/A72 matching the host | Native ARM guest entry through `zhv` |
 | `tcg` | EL1, outer virtualization disabled | Cortex-A53, A57, A72 | Upstream ARM translator, software MMU and AArch64 JIT |
 
 The native accelerator uses the QEMU name `zephyr`; its kernel executor is `zhv`.
+
+`CPU=host` exposes an ARMv8 subset supported by the executor, using the execution
+host's MIDR, translation granules, cache-line information and baseline crypto
+capabilities. This profile reads the hardware counter frequency at runtime and
+uses GIC List Registers for virtual IRQ/FIQ signalling. QEMU continues to handle
+interrupt priorities and acknowledgement through trapped CPU-interface accesses.
+
+On Apple Silicon with nested EL2 support, select an installed QEMU with HVF
+nested virtualization support:
+
+```sh
+make run CPU=host HOST_ACCEL=hvf QEMU_SYSTEM_AARCH64="$(command -v qemu-system-aarch64)"
+```
+
+`HOST_ACCEL` selects the outer emulator. Its default is `tcg`, including hosted
+CI. The inner system accelerator remains `ACCEL=zephyr`. A `host` CPU profile
+under outer TCG uses Cortex-A53 as the execution host unless `HOST_CPU` selects
+another supported Cortex model.
 
 ```sh
 make run QEMU_ARGS='-accel zephyr -cpu cortex-a53'
@@ -75,14 +94,15 @@ Default native/A53 output remains in `build/linux/`. Other combinations use
 ## Native CPU compatibility
 
 The outer emulator defaults to the selected guest model for native tests.
-Before CPU realization completes, the native adapter checks the physical
-MIDR implementer, architecture and part against the selected QEMU model.
+Before CPU realization completes, the native adapter checks the execution
+host's MIDR implementer, architecture and part against the selected QEMU model.
 It does not pretend that a different physical CPU implements that model.
 Revision and variant fields may differ; real-board validation is still needed.
 
 The executor accepts the conventional 32/36/40/42/44/48-bit physical address
-ranges and programs VTCR accordingly. It still uses a 32-bit IPA space and
-2 MiB guest RAM mappings. Wider LPA/LPA2 formats are not enabled by this change.
+ranges and programs VTCR accordingly. It uses 2 MiB guest mappings and a
+configurable 32–36-bit IPA space. The NanoJev image uses 36 bits to expose its
+read-only filesystem above 4 GiB. LPA/LPA2 descriptor formats are unsupported.
 
 `HOST_CPU` can override the outer CPU for diagnostics. For example, native
 `CPU=cortex-a72 HOST_CPU=cortex-a53` is expected to fail the compatibility

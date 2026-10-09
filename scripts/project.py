@@ -6,6 +6,7 @@ import configparser
 import fcntl
 import hashlib
 import os
+import platform
 from pathlib import Path
 import shutil
 import shlex
@@ -207,10 +208,14 @@ def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
                f"-DBUILD_VERSION={PINS['zephyr'][:12]}-qoz"]
     if profile in ("linux", "native-probe"):
         configs = ["native.conf" if accel == "zephyr" else "tcg.conf"]
+        if cpu == "host":
+            configs.append("host.conf")
         if config.mode == "user":
             configs.append("user.conf")
         if config.desktop:
             configs.append("desktop.conf")
+        if config.nanojev:
+            configs.append("nanojev.conf")
         if profile == "native-probe":
             configs.append("native-probe.conf")
         else:
@@ -237,6 +242,8 @@ def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
             overlay += ";user.overlay"
         if config.desktop:
             overlay += ";desktop.overlay"
+        if config.nanojev:
+            overlay += ";nanojev.overlay"
         command.append("-DDTC_OVERLAY_FILE=" + overlay)
         command.append(f'-DCONFIG_QEMU_CPU_MODEL="{cpu}"')
         if config.mode == "system":
@@ -262,7 +269,9 @@ def build_directory(profile: str = "linux", *, config: QemuConfig | None = None)
             profile = "user"
         if profile in ("linux", "user") and config.manual_shell:
             profile += "-shell"
-        if config.desktop:
+        if config.nanojev:
+            profile += "-nanojev"
+        elif config.desktop:
             profile += "-desktop"
         if accel != "zephyr" or cpu != "cortex-a53":
             return BUILD / f"{profile}-{accel}-{cpu}"
@@ -273,13 +282,15 @@ def prepare_guest_disk(config: QemuConfig, *, create: bool = False) -> Path:
     source = None
     if (config.desktop and not os.environ.get("GUEST_FILES") and
             (create or not os.environ.get("GUEST_DISK"))):
-        source = ROOT / "build/desktop-files"
+        source = ROOT / ("build/nanojev-files/boot" if config.nanojev else "build/desktop-files")
         if not source.is_dir():
-            raise RuntimeError("Desktop assets are missing; run make desktop-assets")
+            raise RuntimeError("Desktop assets are missing; run make " +
+                               ("nanojev-assets" if config.nanojev else "desktop-assets"))
     if (config.mode == "user" and not os.environ.get("GUEST_FILES") and
             (create or not os.environ.get("GUEST_DISK"))):
         source = prepare_user_programs(ROOT)
-    return prepare_disk(ROOT, create=create, mode="desktop" if config.desktop else config.mode,
+    mode = "nanojev" if config.nanojev else "desktop" if config.desktop else config.mode
+    return prepare_disk(ROOT, create=create, mode=mode,
                         default_source=source)
 
 
@@ -289,16 +300,34 @@ def qemu_command(profile: str = "linux", interactive: bool = False,
     config.validate_profile(profile)
     machine = "virt,gic-version=3" if profile == "payload" else (
         "virt,virtualization=on,secure=off,gic-version=3")
+    if config.nanojev:
+        machine += ",memory-backend=guest-memory"
     accel = config.accel
     if accel == "tcg" and profile in ("linux", "native-probe"):
         machine = "virt,virtualization=off,secure=off,gic-version=3"
+    outer_accel = os.environ.get("HOST_ACCEL", "tcg")
+    if outer_accel not in ("tcg", "hvf"):
+        raise RuntimeError("HOST_ACCEL must be tcg or hvf")
+    if outer_accel == "hvf" and (platform.system() != "Darwin" or platform.machine() not in ("arm64", "aarch64") or
+                                 config.cpu != "host" or accel != "zephyr"):
+        raise RuntimeError("HOST_ACCEL=hvf requires macOS and the native CPU=host profile")
     host_cpu = config.cpu if accel == "zephyr" else "cortex-a53"
+    if host_cpu == "host" and outer_accel == "tcg":
+        host_cpu = "cortex-a53"
     host_cpu = os.environ.get("HOST_CPU", host_cpu)
-    if host_cpu not in ("cortex-a53", "cortex-a57", "cortex-a72"):
-        raise RuntimeError("HOST_CPU must be cortex-a53, cortex-a57 or cortex-a72")
-    command = [qemu_path(),
-               "-machine", machine, "-accel", "tcg", "-cpu", host_cpu,
-               "-m", "128M" if profile in ("probe", "payload") else "512M", "-smp", "1",
+    if host_cpu not in ("cortex-a53", "cortex-a57", "cortex-a72", "host"):
+        raise RuntimeError("HOST_CPU must be cortex-a53, cortex-a57, cortex-a72 or host")
+    if (host_cpu == "host") != (outer_accel == "hvf"):
+        raise RuntimeError("Outer HVF requires HOST_CPU=host; outer TCG requires a Cortex model")
+    binary = qemu_path()
+    if outer_accel == "hvf" and not os.environ.get("QEMU_SYSTEM_AARCH64"):
+        binary = shutil.which("qemu-system-aarch64")
+        if binary is None:
+            raise RuntimeError("Install a QEMU build with HVF nested virtualization support")
+    command = [binary,
+               "-machine", machine, "-accel", ("hvf,kernel-irqchip=on" if outer_accel == "hvf" else "tcg"), "-cpu", host_cpu,
+               "-m", ("10G" if config.nanojev else
+                      "128M" if profile in ("probe", "payload") else "512M"), "-smp", "1",
                "-display", "none", "-monitor", "none"]
     if interactive:
         command += ["-chardev", "stdio,id=console,mux=on,signal=off", "-serial", "chardev:console"]
@@ -308,10 +337,17 @@ def qemu_command(profile: str = "linux", interactive: bool = False,
         if config.desktop:
             command += ["-device", "ramfb"]
             command[command.index("-display") + 1] = os.environ.get("QEMU_DISPLAY", "default")
-        disk = str(disk_path(ROOT, mode="desktop" if config.desktop else config.mode)).replace(",", ",,")
+        mode = "nanojev" if config.nanojev else "desktop" if config.desktop else config.mode
+        disk = str(disk_path(ROOT, mode=mode)).replace(",", ",,")
         command += ["-global", "virtio-mmio.force-legacy=false",
                     "-drive", f"if=none,id=guestfiles,file={disk},format=raw,readonly=on",
                     "-device", "virtio-blk-device,bus=virtio-mmio-bus.4,drive=guestfiles"]
+        if config.nanojev:
+            image = ROOT / "build/nanojev-files/memory.img"
+            if not image.is_file() or image.stat().st_size != 10 << 30:
+                raise RuntimeError("NanoJev requires its 10 GiB sparse memory image; run make nanojev-assets")
+            escaped = str(image).replace(",", ",,")
+            command += ["-object", f"memory-backend-file,id=guest-memory,size=10G,mem-path={escaped},share=off"]
         if config.mode == "user":
             command += ["-object", "rng-random,id=entropy,filename=/dev/urandom",
                         "-device", "virtio-rng-device,bus=virtio-mmio-bus.5,rng=entropy"]

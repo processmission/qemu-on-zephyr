@@ -1,0 +1,21 @@
+--- a/scripts/predict_toy_decisions.py
++++ b/scripts/predict_toy_decisions.py
+@@ -191,4 +191,5 @@
+         os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+         import torch
++        from accelerate import init_empty_weights
+         from safetensors.torch import load_file
+         from transformers import AutoConfig, AutoModel, AutoTokenizer
+@@ -226,8 +227,9 @@
+-        body = AutoModel.from_config(body_config, attn_implementation="sdpa", trust_remote_code=False).float()
+         DecisionModel = load_decision_model_class()
+-        model = DecisionModel(body, run_config["set_head"])
++        with init_empty_weights():
++            body = AutoModel.from_config(body_config, attn_implementation="sdpa", trust_remote_code=False).float()
++            model = DecisionModel(body, run_config["set_head"])
+         weights = load_file(str(paths["weights"]), device="cpu")
+-        model.load_state_dict(weights, strict=True)
++        model.load_state_dict(weights, strict=True, assign=True)
+         del weights
+         model.to(device=device, dtype=torch.float32)
+         model.eval()

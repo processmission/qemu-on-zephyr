@@ -9,7 +9,7 @@ from typing import NoReturn
 
 MACHINES = {"zephyr-virt": "ARM virt profile with PL011, GICv3 and one vCPU"}
 ACCELERATORS = {"zephyr": "Zephyr EL2 virtualization", "tcg": "AArch64 software translation"}
-CPUS = ("cortex-a53", "cortex-a57", "cortex-a72")
+CPUS = ("cortex-a53", "cortex-a57", "cortex-a72", "host")
 
 
 @dataclass(frozen=True)
@@ -23,8 +23,13 @@ class QemuConfig:
     user_env: tuple[str, ...] = ()
     strace: bool = False
     desktop: bool = False
+    nanojev: bool = False
 
     def validate_profile(self, profile: str) -> None:
+        if self.cpu == "host" and self.accel != "zephyr":
+            raise RuntimeError("The host CPU model requires ACCEL=zephyr")
+        if self.nanojev and (not self.desktop or self.accel != "zephyr"):
+            raise RuntimeError("NanoJev requires the desktop profile with ACCEL=zephyr")
         if self.desktop and (profile != "linux" or self.mode != "system"):
             raise RuntimeError("QEMU_DESKTOP=1 requires the system Linux profile")
         if self.mode == "user" and profile == "native-probe":
@@ -69,8 +74,13 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
         raise RuntimeError("QEMU_SHELL must be 0 (automatic startup) or 1 (manual shell)")
     mode = env.get("QEMU_MODE", "system")
     desktop = env.get("QEMU_DESKTOP", "0")
+    nanojev = env.get("QEMU_NANOJEV", "0")
+    if nanojev not in ("0", "1"):
+        raise RuntimeError("QEMU_NANOJEV must be 0 or 1")
     if desktop not in ("0", "1"):
         raise RuntimeError("QEMU_DESKTOP must be 0 or 1")
+    if nanojev == "1":
+        desktop = "1"
     if desktop == "1" and mode != "system":
         raise RuntimeError("QEMU_DESKTOP=1 requires QEMU_MODE=system")
     if mode not in ("system", "user"):
@@ -85,7 +95,7 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
                 "Arguments after the program path are passed to the program."
                 if mode == "user" else
                 "QEMU_ARGS overrides ACCEL and CPU for explicitly supplied options. "
-                "The current guest has 256 MiB RAM and one vCPU."),
+                "The guest has one vCPU; RAM is selected by its build profile."),
     )
     parser.add_argument("-help", action="help", help="show supported options and exit")
     parser.add_argument("-M", "-machine", dest="machine", action="append",
@@ -94,7 +104,7 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
     parser.add_argument("-accel", action="append", metavar="[accel=]NAME",
                         help="tcg or help" if mode == "user" else "zephyr, tcg, or help")
     parser.add_argument("-cpu", action="append", metavar="MODEL",
-                        help="cortex-a53, cortex-a57, cortex-a72, or help")
+                        help="cortex-a53, cortex-a57, cortex-a72, host (native only), or help")
     if mode == "user":
         parser.add_argument("-E", dest="user_env", action="append", default=[],
                             metavar="NAME=VALUE", help="process environment setting")
@@ -115,7 +125,8 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
         (machine_option, "Supported machines", MACHINES),
         (accel_option, "Supported accelerators",
          {"tcg": ACCELERATORS["tcg"]} if mode == "user" else ACCELERATORS),
-        (cpu_option, "Supported CPUs", dict.fromkeys(CPUS, "")),
+        (cpu_option, "Supported CPUs", {name: "native only" if name == "host" else ""
+                                        for name in CPUS if name != "host" or mode == "system"}),
     ):
         if value == "help":
             print(title + ":")
@@ -136,7 +147,9 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
     if accel not in ACCELERATORS:
         raise RuntimeError(f"Unsupported accelerator: {accel!r}; use -accel zephyr|tcg or ACCEL=zephyr|tcg")
     if cpu not in CPUS:
-        raise RuntimeError(f"Unsupported CPU: {cpu!r}; use -cpu cortex-a53|cortex-a57|cortex-a72")
+        raise RuntimeError(f"Unsupported CPU: {cpu!r}; use -cpu cortex-a53|cortex-a57|cortex-a72|host")
+    if cpu == "host" and accel != "zephyr":
+        raise RuntimeError("The host CPU model requires ACCEL=zephyr")
     program = tuple(options.program) if mode == "user" else ()
     user_env = tuple(options.user_env) if mode == "user" else ()
     if mode == "user":
@@ -149,4 +162,4 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
     return QemuConfig(machine=machine, accel=accel, cpu=cpu, manual_shell=shell_mode == "1",
                       mode=mode, program=program, user_env=user_env,
                       strace=options.strace if mode == "user" else False,
-                      desktop=desktop == "1")
+                      desktop=desktop == "1", nanojev=nanojev == "1")

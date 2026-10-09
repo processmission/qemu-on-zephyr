@@ -58,6 +58,22 @@ Zephyr 命令行，继续执行其他程序。
   <sub>AArch64 TCG · 真实串口输出 · 启动日志 12 倍速 · 程序执行正常速度</sub>
 </p>
 
+### NanoJev CPU 迷宫
+
+NanoJev 在 ZHV 内的 Debian ARM64 桌面中执行本地 CPU 推理。
+完整的 8 × 8 迷宫录制经过 19 次移动尝试、3 次碰撞，最终到达目标。
+线性层采用动态 INT8 量化，嵌入层和决策头使用 FP32。
+
+<p align="center">
+  <a href="docs/images/nanojev-cpu.gif"><img src="docs/images/nanojev-cpu.gif" width="800" alt="NanoJev 在 ZHV Linux 桌面中通过 CPU 完整执行迷宫并抵达目标"></a><br>
+  <sub>外层 HVF · 内层 ZHV · 启动和初始化 12 倍速 · 完整迷宫过程保持原速</sub>
+</p>
+
+<p align="center">
+  <a href="#nanojev-cpu-桌面">启动 NanoJev</a> ·
+  <a href="docs/images/nanojev-cpu.mp4">观看完整视频</a>
+</p>
+
 ## 快速开始
 
 开发环境支持 Linux x86_64/AArch64 和 macOS Apple Silicon，需要 Python 3.12+。
@@ -92,6 +108,24 @@ make run
 
 Linux 自动启动。使用 `make run QEMU_SHELL=1` 可以进入 Zephyr 命令行，
 手动输入启动命令。
+
+### NanoJev CPU 桌面
+
+额外的 Debian ARM64 桌面镜像在 Linux 内执行 NanoJev 迷宫决策，
+使用 ZHV EL2 后端和 3 GiB 客户机内存：
+
+```sh
+make nanojev
+```
+
+此镜像需要支持 Linux ARM64 的 Docker，以及至少 16 GiB 主机内存。
+操作步骤见 [NanoJev 镜像与桌面控制](docs/nanojev.md)。
+
+支持嵌套虚拟化的 Apple Silicon 主机可以使用新版 Homebrew QEMU：
+
+```sh
+make nanojev CPU=host HOST_ACCEL=hvf QEMU_SYSTEM_AARCH64="$(command -v qemu-system-aarch64)"
+```
 
 ### 静态 Linux 程序
 
@@ -143,6 +177,7 @@ qemu-aarch64 /images/hello arg1
 | `make check` | Linux 启动、控制台、定时器中断和主机线程调度 |
 | `make check-user` | Linux 程序执行、系统调用、内存和连续启动 |
 | `make check-desktop` | Alpine 桌面启动、交互、显示画面和客户机关机 |
+| `make check-nanojev` | ZHV Linux 内的 NanoJev CPU 推理和桌面交互 |
 
 桌面验证需要 Docker 和 `requirements-demo.txt` 中的依赖。
 

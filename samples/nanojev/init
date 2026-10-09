@@ -1,0 +1,24 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: Apache-2.0
+set -eu
+/bin/busybox --install -s /bin
+export PATH=/bin
+trap 'echo NANOJEV_FAILED; exec sh </dev/console >/dev/console 2>&1' EXIT
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+modprobe -a squashfs overlay simpledrm
+attempt=0
+until [ -b /dev/pmem0 ]; do
+    attempt=$((attempt + 1))
+    [ "$attempt" -lt 30 ] || exit 1
+    sleep 1
+done
+mount -t squashfs -o ro /dev/pmem0 /lower
+mount -t tmpfs tmpfs /rw
+mkdir /rw/upper /rw/work
+mount -t overlay overlay -o lowerdir=/lower,upperdir=/rw/upper,workdir=/rw/work /newroot
+mkdir -p /newroot/.lower /newroot/.rw
+mount --move /lower /newroot/.lower
+mount --move /rw /newroot/.rw
+exec switch_root /newroot /init

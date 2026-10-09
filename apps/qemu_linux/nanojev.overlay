@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+#include <zephyr/dt-bindings/memory-attr/memory-attr-arm64.h>
+
+&sram0 {
+    reg = <0x0 0x40000000 0x1 0x0>;
+};
+
+/delete-node/ &desktop_fb;
+
+&{/reserved-memory} {
+    nanojev_fb: framebuffer@13fc00000 {
+        reg = <0x1 0x3fc00000 0x0 0x00400000>;
+        no-map;
+    };
+};
+
+&ramfb0 {
+    memory-region = <&nanojev_fb>;
+    width = <1024>;
+    height = <768>;
+};
+
+/ {
+    chosen {
+        qemu,memory-image = &nanojev_image;
+    };
+    nanojev_image: memory@180000000 {
+        compatible = "zephyr,memory-region";
+        reg = <0x1 0x80000000 0x1 0x0>;
+        zephyr,memory-region = "NANOJEV_IMAGE";
+        zephyr,memory-attr = <(DT_MEM_CACHEABLE | DT_MEM_ARM64_MMU_NORMAL)>;
+    };
+};

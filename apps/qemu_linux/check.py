@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--firmware", help="Zephyr filesystem path to the acceptance firmware")
     parser.add_argument("--bios", action="store_true", help="load acceptance firmware as raw bytes")
-    parser.add_argument("--guest-cpu", choices=("cortex-a53", "cortex-a57", "cortex-a72"))
+    parser.add_argument("--guest-cpu", choices=("cortex-a53", "cortex-a57", "cortex-a72", "host"))
     parser.add_argument("--expect-load-error", action="store_true")
     parser.add_argument("--stop-firmware", action="store_true")
     parser.add_argument("--reboot-after-firmware", action="store_true")

@@ -209,9 +209,10 @@ appear on both axes without representing two independent contributions.
 
 ## QEMU implementation changes
 
-The [patch ledger](data/qemu-patches.csv) records the 14 patches in
-[patches/qemu/series](../patches/qemu/series). They affect 34 existing files,
-with 348 inserted lines and 87 deleted lines. Counts come from
+The [patch ledger](data/qemu-patches.csv) records the 16 patches in
+[patches/qemu/series](../patches/qemu/series). They affect 37 existing files,
+with 382 inserted lines and 140 deleted lines. File totals are deduplicated
+across the series; line counts are accumulated per patch. Counts come from
 `git apply --numstat` for each patch and include physical diff lines.
 New files under `src/qemu/` and Zephyr kernel extensions are outside these
 totals. The Cortex-A72 move contributes 62 additions and 62 deletions while
@@ -220,10 +221,10 @@ retaining its register definitions.
 | Main purpose | Patches | Added lines | Deleted lines | QEMU changes |
 | --- | --- | ---: | ---: | --- |
 | Host interface | 0001–0005 | 68 | 8 | Headers, macro handling, allocation, paths, optional timestamps and deterministic random mode |
-| CPU and runstate | 0006, 0010 | 66 | 2 | Accelerator hooks, non-signal wakeup, shutdown/reset and omitted GDB or migration hooks |
+| CPU and runstate | 0006, 0010, 0016 | 92 | 54 | Accelerator hooks, wakeup, shutdown/reset, counter conversion and timer expiry |
 | Device, loader and RAM profile | 0007–0009 | 47 | 1 | Migration registration, firmware services and memory-backend assumptions |
 | TCG code allocation | 0011 | 14 | 1 | JIT allocation through writable/executable aliases |
-| CPU models | 0012–0013 | 67 | 62 | GICv3-only initialization and shared Cortex-A72 registration |
+| CPU models | 0012–0013, 0015 | 75 | 63 | GICv3-only initialization, Cortex-A72 registration and the native host CPU profile |
 | Linux user execution | 0014 | 86 | 13 | Checked memory accesses, invalidation, ELF policy, identity and omitted Linux host services |
 
 New QEMU modules supply `zephyr-virt`, the `zephyr` accelerator, the ARM

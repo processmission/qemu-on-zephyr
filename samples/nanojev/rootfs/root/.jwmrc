@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<JWM>
+    <RootMenu onroot="12">
+        <Program label="Terminal">xterm</Program>
+        <Exit label="Exit desktop" confirm="false"/>
+    </RootMenu>
+    <WindowStyle>
+        <Font>DejaVu Sans-10</Font>
+        <Width>2</Width><Height>26</Height>
+        <Foreground>#dce7f4</Foreground><Background>#172735</Background>
+        <Active><Foreground>#ffffff</Foreground><Background>#245064</Background></Active>
+    </WindowStyle>
+    <TrayStyle>
+        <Font>DejaVu Sans-10</Font>
+        <Foreground>#dce7f4</Foreground><Background>#172735</Background>
+    </TrayStyle>
+    <Tray x="0" y="-1" height="30">
+        <TrayButton label="Debian Linux">root:1</TrayButton>
+        <TaskList maxwidth="480"/>
+        <Clock format="%H:%M:%S"/>
+    </Tray>
+    <Desktops width="1" height="1"><Background type="solid">#0c1622</Background></Desktops>
+    <FocusModel>click</FocusModel>
+</JWM>

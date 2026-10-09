@@ -59,6 +59,22 @@ then return to the Zephyr shell for another execution.
   <sub>AArch64 TCG · Actual UART output · Startup at 12× speed · Program execution at normal speed</sub>
 </p>
 
+### NanoJev CPU maze
+
+NanoJev runs local CPU inference inside a Debian ARM64 desktop with ZHV.
+The complete 8 × 8 recording reaches the goal in 19 attempts with 3 collisions,
+using dynamic INT8 linear layers and FP32 embeddings and decision heads.
+
+<p align="center">
+  <a href="docs/images/nanojev-cpu.gif"><img src="docs/images/nanojev-cpu.gif" width="800" alt="Complete NanoJev CPU maze execution inside the ZHV Linux desktop, reaching the goal"></a><br>
+  <sub>Outer HVF · Inner ZHV · Boot and initialization at 12× speed · Complete maze at normal speed</sub>
+</p>
+
+<p align="center">
+  <a href="#nanojev-cpu-desktop">Run NanoJev</a> ·
+  <a href="docs/images/nanojev-cpu.mp4">Watch the complete video</a>
+</p>
+
 ## Quick start
 
 Use Linux x86_64/AArch64 or macOS Apple Silicon with Python 3.12+.
@@ -93,6 +109,24 @@ make run
 
 Linux starts automatically. Use `make run QEMU_SHELL=1` to enter the Zephyr
 shell and supply a launch command manually.
+
+### NanoJev CPU desktop
+
+Run NanoJev's local maze decisions in a separate Debian ARM64 desktop image,
+using the ZHV EL2 accelerator and 3 GiB guest RAM:
+
+```sh
+make nanojev
+```
+
+This image requires Docker with Linux ARM64 support and at least 16 GiB host RAM.
+[NanoJev image and desktop controls](docs/nanojev.md)
+
+On Apple Silicon with nested virtualization support and a recent Homebrew QEMU:
+
+```sh
+make nanojev CPU=host HOST_ACCEL=hvf QEMU_SYSTEM_AARCH64="$(command -v qemu-system-aarch64)"
+```
 
 ### Static Linux program
 
@@ -145,6 +179,7 @@ User programs can run successively in the same Zephyr boot.
 | `make check` | Linux boot, console, timer interrupts and host scheduling |
 | `make check-user` | Linux process execution, syscalls, memory and consecutive launches |
 | `make check-desktop` | Alpine desktop startup, interaction, display frames and guest shutdown |
+| `make check-nanojev` | NanoJev CPU inference and display interaction inside the ZHV Linux guest |
 
 Desktop validation requires Docker and the dependencies in `requirements-demo.txt`.
 

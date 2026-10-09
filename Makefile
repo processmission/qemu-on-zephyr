@@ -5,15 +5,20 @@ PYTHON ?= $(CURDIR)/.venv/bin/python
 JOBS ?= 8
 ACCEL ?= zephyr
 CPU ?= cortex-a53
+HOST_ACCEL ?= tcg
 QEMU_ARGS ?=
 QEMU_SHELL ?= 0
 QEMU_MODE ?= system
 QEMU_DESKTOP ?= 0
+QEMU_NANOJEV ?= 0
+NANOJEV_MAZE_SIZE ?= 8
 GUEST_FILES ?=
 GUEST_DISK ?=
 export JOBS ACCEL CPU QEMU_ARGS QEMU_SHELL QEMU_MODE QEMU_DESKTOP GUEST_FILES GUEST_DISK
+export QEMU_NANOJEV
+export HOST_ACCEL
 
-.PHONY: help host-deps setup doctor init update prepare assets guest-disk build run check check-firmware check-user probe native-probe test-glib test-payload test-arch test-tools clean check-env
+.PHONY: help host-deps setup doctor init update prepare assets guest-disk build run check check-firmware check-user probe native-probe test-glib test-payload test-arch test-tools test-counter clean check-env
 help:
 	@echo 'First use: make host-deps (if needed), make setup, make run'
 	@echo 'make setup         Prepare .venv, west workspace, SDK and verified guest assets'
@@ -33,12 +38,16 @@ help:
 	@echo 'make test-glib     Host GLib differential regression'
 	@echo 'make test-arch     EL1/EL2, FPU and executor regressions through west twister'
 	@echo 'make test-tools    Workspace setup and configuration tests'
+	@echo 'make test-counter  Validate native counter agreement at 24 MHz'
 	@echo 'make desktop       Build and run Alpine Linux with Xorg and JWM (requires Docker)'
 	@echo 'make check-desktop Verify the Alpine desktop headlessly and save validation artifacts'
+	@echo 'make nanojev       Build and run the separate NanoJev CPU desktop image'
+	@echo 'make check-nanojev Verify local CPU inference inside the ZHV Linux desktop'
 	@echo 'make record-demos  Record system desktop and user-mode GIFs for the README'
 	@echo 'make clean         Delete generated builds, retaining SDK, venv and assets'
 	@echo 'QEMU_ARGS="-M help", "-accel help" or "-cpu help" lists supported selections'
 	@echo 'ACCEL and CPU provide defaults for options omitted from QEMU_ARGS'
+	@echo 'HOST_ACCEL=hvf CPU=host uses outer hardware virtualization on supported Apple Silicon'
 
 host-deps:
 	bash scripts/install-host-deps.sh
@@ -63,6 +72,9 @@ test-glib:
 test-tools: | check-env
 	"$(PYTHON)" -m unittest discover -s tests/tools -v
 
+test-counter: | check-env
+	HOST_ACCEL=tcg HOST_CPU=cortex-a53 "$(PYTHON)" scripts/check_counter.py
+
 .PHONY: desktop-assets desktop check-desktop record-demos
 desktop-assets: | check-env
 	"$(PYTHON)" scripts/desktop.py
@@ -75,3 +87,13 @@ check-desktop: desktop-assets
 
 record-demos: desktop-assets
 	"$(PYTHON)" scripts/record_demos.py
+
+.PHONY: nanojev-assets nanojev check-nanojev
+nanojev-assets: | check-env
+	"$(PYTHON)" scripts/nanojev.py
+
+nanojev: nanojev-assets
+	$(MAKE) run QEMU_NANOJEV=1 ACCEL=zephyr
+
+check-nanojev: nanojev-assets
+	"$(PYTHON)" scripts/check_nanojev.py --maze-size "$(NANOJEV_MAZE_SIZE)" --cpu "$(CPU)"

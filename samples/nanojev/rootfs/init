@@ -1,0 +1,34 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root DISPLAY=:0 TERM=linux LANG=C.UTF-8
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /run
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /run
+mkdir -p /run/nanojev /run/cache
+export TMPDIR=/run/cache
+hostname qemu-on-zephyr
+Xorg :0 vt1 -ac -nolisten tcp -noreset -logfile /run/Xorg.log &
+echo $! > /run/desktop-xorg.pid
+attempt=0
+until xsetroot -solid '#0c1622' 2>/dev/null; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+        cat /run/Xorg.log
+        echo NANOJEV_FAILED
+        exec sh </dev/console >/dev/console 2>&1
+    fi
+    sleep 1
+done
+jwm &
+echo $! > /run/desktop-jwm.pid
+python /opt/nanojev/scripts/desktop_demo.py &
+echo $! > /run/desktop-nanojev.pid
+echo 'DESKTOP_READY Debian / Xorg / JWM / NanoJev CPU'
+export PS1='nanojev# '
+exec /bin/busybox sh </dev/console >/dev/console 2>&1

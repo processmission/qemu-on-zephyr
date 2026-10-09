@@ -16,8 +16,8 @@ selects the configured `zephyr` or `tcg` accelerator, creates the machine and
 starts the VM. The owner thread processes runstate requests, console input,
 QEMU timers, deferred RCU callbacks and backend execution returns.
 
-`machine.c` defines `zephyr-virt-machine` with a selected Cortex-A53/A57/A72,
-256 MiB guest RAM, the original PL011 and software GICv3 models. It generates the guest DTB
+`machine.c` defines `zephyr-virt-machine` with a selected Cortex-A53/A57/A72 or host CPU,
+256 MiB guest RAM by default, the original PL011 and software GICv3 models. It generates the guest DTB
 and calls upstream `arm_load_kernel()` for Linux or ELF firmware. Raw firmware
 uses QEMU's image loader and starts at the RAM base. The guest files are read
 from Zephyr-mounted filesystems through the POSIX/QEMU file adapter. The
@@ -25,6 +25,10 @@ sample mounts an Ext2 disk supplied by outer VirtIO Block at `/images`.
 `CONFIG_QEMU_EMBEDDED_PAYLOAD` additionally exposes built-in files under
 `/guest` through `payload-fs.c`. Native execution borrows the executor RAM; TCG
 uses a separate buffer accessed through its software MMU.
+
+The NanoJev profile reserves 3 GiB of native guest RAM and maps an external
+read-only image as a Linux `pmem-region`. Its filesystem and runtime are
+described in [NanoJev CPU desktop](nanojev.md).
 
 `os.c` implements the supported host synchronization and allocation facilities.
 The GLib subset supplies the data structures and APIs needed by the selected
