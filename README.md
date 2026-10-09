@@ -9,7 +9,7 @@
   <a href="https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml"><img src="https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml/badge.svg" alt="Build and boot CI"></a>
   <a href="docs/backends.md"><img src="https://img.shields.io/badge/architecture-AArch64-315879?style=flat-square" alt="Architecture: AArch64"></a>
   <a href="docs/setup.md"><img src="https://img.shields.io/badge/Zephyr_SDK-1.0.1-7A51C2?style=flat-square" alt="Zephyr SDK 1.0.1"></a>
-  <a href="docs/validation.md"><img src="https://img.shields.io/badge/status-experimental-d29922?style=flat-square" alt="Status: experimental"></a>
+  <img src="https://img.shields.io/badge/status-experimental-d29922?style=flat-square" alt="Status: experimental">
 </p>
 
 <p align="center">
@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="#in-action">Demos</a> ·
+  <a href="docs/slides/qemu-on-zephyr.pptx">Presentation</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#validation">Validation</a> ·
   <a href="#documentation">Documentation</a>
@@ -190,9 +191,10 @@ Desktop validation requires Docker and the dependencies in `requirements-demo.tx
 | [Usage guidelines](docs/guidelines.md) · [中文指南](docs/guidelines.zh-CN.md) | Options, firmware, external programs and troubleshooting |
 | [Environment setup](docs/setup.md) | Dependencies, SDK, proxies and offline setup |
 | [Desktop and recordings](docs/desktop.md) | Alpine images, controls and GIF recording |
+| [Presentation](docs/slides/qemu-on-zephyr.pptx) | 12 slides with the Alpine, Linux user-mode and NanoJev CPU demos |
 | [Architecture](docs/architecture.md) · [Backends](docs/backends.md) | QEMU integration, EL2 execution and TCG |
 | [Linux user-mode interfaces](docs/user-mode.md) | Supported syscalls and process memory |
-| [Technical paper](docs/paper.md) · [Validation](docs/validation.md) | Porting analysis and recorded execution evidence |
+| [Technical paper](docs/paper.md) | Porting analysis and recorded execution evidence |
 | [Contributing](CONTRIBUTING.md) | Source changes, patches and development checks |
 
 Components retain their original licenses. See [license and source provenance](LICENSE.md).

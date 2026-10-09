@@ -9,7 +9,7 @@
   <a href="https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml"><img src="https://github.com/processmission/qemu-on-zephyr/actions/workflows/build.yml/badge.svg" alt="构建与启动 CI"></a>
   <a href="docs/backends.md"><img src="https://img.shields.io/badge/architecture-AArch64-315879?style=flat-square" alt="AArch64 架构"></a>
   <a href="docs/setup.md"><img src="https://img.shields.io/badge/Zephyr_SDK-1.0.1-7A51C2?style=flat-square" alt="Zephyr SDK 1.0.1"></a>
-  <a href="docs/validation.md"><img src="https://img.shields.io/badge/status-experimental-d29922?style=flat-square" alt="实验性项目"></a>
+  <img src="https://img.shields.io/badge/status-experimental-d29922?style=flat-square" alt="实验性项目">
 </p>
 
 <p align="center">
@@ -18,6 +18,7 @@
 
 <p align="center">
   <a href="#运行演示">运行演示</a> ·
+  <a href="docs/slides/qemu-on-zephyr.pptx">演示文稿</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#运行验证">运行验证</a> ·
   <a href="#文档">文档</a>
@@ -188,9 +189,10 @@ qemu-aarch64 /images/hello arg1
 | [中文使用指南](docs/guidelines.zh-CN.md) · [English guidelines](docs/guidelines.md) | 参数、固件、外部程序与常见问题 |
 | [环境配置](docs/setup.md) | 依赖、SDK、代理和离线配置 |
 | [桌面与动图录制](docs/desktop.md) | Alpine 镜像、桌面控制和 GIF 录制 |
+| [演示文稿](docs/slides/qemu-on-zephyr.pptx) | 12 页 PPT，包含 Alpine、Linux 用户态和 NanoJev CPU 演示 |
 | [架构说明](docs/architecture.md) · [执行后端](docs/backends.md) | QEMU 集成、EL2 执行和 TCG |
 | [Linux 用户态接口](docs/user-mode.md) | 系统调用与进程内存 |
-| [英文论文](docs/paper.md) · [验证记录](docs/validation.md) | 移植分析与运行证据 |
+| [英文论文](docs/paper.md) | 移植分析与运行证据 |
 | [参与开发](CONTRIBUTING.md) | 源码修改、补丁维护和开发检查 |
 
 各组件保留原有许可证，详见[许可证与源码来源](LICENSE.md)。
