@@ -196,6 +196,7 @@ if(CONFIG_QEMU_USER)
 endif()
 
 if(CONFIG_QEMU_SYSTEM)
+  zephyr_library_sources_ifdef(CONFIG_QEMU_FRAMEBUFFER "${qemu_port}/framebuffer.c")
   zephyr_ld_options(-Wl,--wrap=exit)
   zephyr_library_include_directories("${qemu_root}/target/arm")
   set(qemu_native_common_sources

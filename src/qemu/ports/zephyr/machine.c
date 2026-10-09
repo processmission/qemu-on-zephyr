@@ -20,6 +20,7 @@
 #include "system/address-spaces.h"
 #include "system/device_tree.h"
 #include "system/zephyr.h"
+#include "framebuffer.h"
 
 #define TYPE_ZEPHYR_VIRT MACHINE_TYPE_NAME("zephyr-virt")
 #define GUEST_RAM_IPA 0x40000000ULL
@@ -179,6 +180,12 @@ static void zephyr_virt_init(MachineState *machine)
     }
     create_fdt(s);
     s->boot_info.ram_size = size;
+#ifdef CONFIG_QEMU_FRAMEBUFFER
+    s->boot_info.ram_size -= QEMU_ZEPHYR_FRAMEBUFFER_SIZE;
+    qemu_zephyr_framebuffer_init(machine->fdt,
+                                (uint8_t *)ram + s->boot_info.ram_size,
+                                ipa + s->boot_info.ram_size);
+#endif
     s->boot_info.loader_start = ipa;
     s->boot_info.board_id = -1;
     s->boot_info.get_dtb = get_dtb;

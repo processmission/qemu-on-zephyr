@@ -80,6 +80,14 @@ config QEMU_CPU_MODEL
 	  QEMU CPU model selected before machine realization. The native
 	  accelerator requires a supported model matching the host CPU.
 
+config QEMU_FRAMEBUFFER
+	bool "Linux simple framebuffer on the Zephyr display"
+	depends on QEMU_SYSTEM && DISPLAY
+	help
+	  Reserve the last 4 MiB of guest RAM for a simple-framebuffer device
+	  and copy its pixels to the chosen Zephyr display at 10 frames/second.
+	  The display must use ARGB8888 and fit within the reserved memory.
+
 config QEMU_TCG_CACHE_SIZE_MIB
 	int "TCG code cache size in MiB"
 	default 16
