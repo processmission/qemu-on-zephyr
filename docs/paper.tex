@@ -59,10 +59,12 @@ Host compatibility depends on POSIX behavior, added libraries, and Zephyr
 kernel support. QEMU needs 14 patches to existing files plus new machine,
 accelerator, and user-runtime modules.
 
-The Zephyr catalog lists 393 interfaces, with qualifications or missing
-support labels for 104 entries. A separate audit of 50 host interfaces finds
-31 reused APIs, eight adaptations, two metadata limits, and nine unavailable
-process or signal extensions. Tests execute Linux, firmware, and static
+The Zephyr catalog lists 393 unique POSIX API names. A separate audit of 50
+QEMU-required host POSIX interfaces finds 31 reusable Zephyr POSIX APIs, eight
+items that need Zephyr-side adaptation, and 11 items with limitations or
+missing support. The latter include two incomplete \code{stat}/\code{fstat}
+metadata results and nine unavailable process or signal interfaces. The nine
+unavailable interfaces are not all required for the current Linux boot. Tests execute Linux, firmware, and static
 Linux programs on an outer QEMU platform. The EL2 backend supplies mechanisms
 for a Type-1 hypervisor. Physical-board performance, full POSIX conformance,
 and production isolation require further evaluation.
@@ -107,7 +109,7 @@ causal link.
   route/.style={box,draw=posixorange!75!black,fill=posixorange!12},
   edge/.style={-{Stealth[length=1.8mm]},line width=0.5pt}]
 \node[inputbox] (A) at (0,13) {Zephyr POSIX\\393 catalog entries};
-\node[box] (B) at (45,13) {Audit: 50 contracts\\Selected API probes};
+\node[box] (B) at (45,13) {Audit: 50 host POSIX interfaces\\Selected API probes};
 \node[route] (C) at (90,13) {Reuse, adapt\\or restrict};
 \node[box] (D) at (135,13) {Host compatibility\\and port support};
 \node[inputbox] (E) at (0,-13) {QEMU source\\14 patches + new modules};
@@ -348,13 +350,14 @@ and \code{munlockall}. Another 30 entries with this behavior carry
 qualifications. Unmarked \code{fcntl}, \code{lseek}, and \code{times} have
 implementations. The 73.5\% unqualified share measures catalog labels.
 
-The host audit covers 50 interface contracts: 41 retained or adapted
-interfaces and nine process or signal extensions. An interface contract
-defines the behavior a caller requires. The nine extensions lie outside
-the current execution profile; a Linux boot does not require all nine.
-Table~\ref{tab:audit-counts} lists the categories. The CSV records names,
-source paths, and limits. Counts assign equal weight to each interface in
-this audit.
+The host audit covers 50 QEMU-required POSIX interface items: 31 are reusable
+from Zephyr POSIX, eight require adaptation in the port, and 11 have limited
+or unavailable behavior. The last group contains two incomplete
+\code{stat}/\code{fstat} metadata results and nine process or signal
+interfaces unavailable in the selected Zephyr profile. Those nine lie outside
+the current execution profile; a Linux boot does not require all of them.
+Table~\ref{tab:audit-counts} retains the detailed breakdown. The CSV records
+names, source paths, and limits. Counts assign equal weight to each item.
 
 \begin{figure*}[t]
 \centering
@@ -377,32 +380,33 @@ this audit.
 \end{minipage}\hfill
 \begin{minipage}[t]{0.48\textwidth}
 \centering
-\textbf{B. QEMU host audit ($n=50$)}\par\medskip
+\textbf{B. QEMU host POSIX interfaces ($n=50$)}\par\medskip
 \begin{tikzpicture}[every node/.style={font=\scriptsize,align=center,
   fill=white,inner sep=1.5pt}]
 \pie[sum=auto,radius=1.7,rotate=90,hide number,text=inside,
-  color={posixblue,posixgreen,posixorange,posixred}]
+  color={posixblue,posixgreen,posixred}]
   {31/{\shortstack{31\\62.0\%}},8/{\shortstack{8\\16.0\%}},
-   2/{\shortstack{2\\4.0\%}},9/{\shortstack{9\\18.0\%}}}
+   11/{\shortstack{11\\22.0\%}}}
 \end{tikzpicture}\par
 \small
 \begin{tabular}{@{}lr@{}}
-\swatch{posixblue} Reused host API & 31\\
-\swatch{posixgreen} Port adaptation & 8\\
-\swatch{posixorange} Limited metadata & 2\\
-\swatch{posixred} Unavailable extension & 9
+\swatch{posixblue} Reusable Zephyr POSIX API & 31\\
+\swatch{posixgreen} Zephyr-side adaptation & 8\\
+\swatch{posixred} Limited or unavailable & 11
 \end{tabular}
 \end{minipage}
 \caption{Interface counts with separate denominators. Panel A records the
-pinned documentation's labels. Panel B classifies a reviewed set of host
-contracts; reuse and adaptation refer to the selected behavior. These counts
-do not measure standards-wide conformance, runtime test coverage or the
-fraction of all QEMU functionality implemented.}
+pinned documentation's labels. Panel B classifies QEMU-required host POSIX
+interfaces by treatment. The combined limited-or-unavailable group contains
+two incomplete stat/fstat metadata results and nine process/signal interfaces
+not provided by the selected profile. The detailed table breaks down these
+items. These counts do not measure standards-wide conformance, runtime test
+coverage or the fraction of all QEMU functionality implemented.}
 \label{fig:posix-inventories}
 \end{figure*}
 
 \begin{table*}[t]
-\caption{The 50 reviewed QEMU host-interface contracts. Complete names and
+\caption{The 50 reviewed QEMU host POSIX interfaces. Complete names and
 source references are preserved in the audit CSV.}
 \label{tab:audit-counts}
 \small
@@ -410,16 +414,16 @@ source references are preserved in the audit CSV.}
 \toprule
 Treatment & Count & Interfaces and supported scope\\
 \midrule
-Reused host API & 31 & 21 pthread interfaces; two clock queries; five descriptor
+Reusable Zephyr POSIX API & 31 & 21 pthread interfaces; two clock queries; five descriptor
 operations (open/read/write/close/lseek); uname; flockfile/funlockfile.
 Bindings reuse the selected providers; individual semantics are not exhaustively tested.\\
-Port adaptation & 8 & pread/pwrite use private-descriptor seek/I/O/restore;
+Zephyr-side adaptation & 8 & pread/pwrite use private-descriptor seek/I/O/restore;
 mmap/munmap/mprotect requirements use kernel mappings and QEMU page metadata;
 sigsetjmp/siglongjmp cover no-mask-save calls; exit uses the worker-local target.\\
-Limited metadata & 2 & stat/fstat retain type and size while the observed
+Incomplete stat/fstat metadata & 2 & stat/fstat retain type and size while the observed
 filesystem path omits Unix permission bits.\\
-Unavailable extension & 9 & sigaction, kill, pause, sigpending, sigsuspend,
-sigwait, fork, execve and waitpid. These process/signal contracts are outside
+Process/signal interfaces unavailable & 9 & The missing items cover signal
+control and process creation or waiting. These interfaces are outside
 the implemented profile.\\
 \bottomrule
 \end{tabularx}

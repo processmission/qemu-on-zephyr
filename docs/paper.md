@@ -28,7 +28,7 @@ device models and its Tiny Code Generator (TCG), adds an Arm EL2 execution
 backend, and executes a
 limited set of static Linux programs through a syscall adapter. Recorded
 Linux, firmware and user-program executions demonstrate the selected host
-contracts working together on an emulated Arm platform. The resulting
+interfaces working together on an emulated Arm platform. The resulting
 architecture extends Zephyr toward simulation workloads and Type-1
 hypervisor deployment on application-class SoCs. Physical-board performance,
 standards-wide conformance and production isolation remain outside the
@@ -83,10 +83,10 @@ finite pools for threads, mutexes, condition variables and descriptors.
 [Application configuration](../apps/qemu_linux/prj.conf);
 [module configuration](../zephyr/Kconfig).
 
-### 2.2 QEMU and library contracts
+### 2.2 QEMU and library interfaces
 
 The QEMU Object Model (QOM), MemoryRegion, the big QEMU lock (BQL),
-read-copy-update (RCU), GLib containers and TCG are QEMU or library contracts.
+read-copy-update (RCU), GLib containers and TCG are QEMU or library interfaces.
 They need host facilities, but their presence is not a measure of POSIX
 coverage. The port's GLib subset has separate differential tests.
 Likewise, disabling a QEMU subsystem such as migration describes the selected
@@ -106,7 +106,7 @@ layer, and its syscall tests evaluate that layer.
 flowchart TB
     qemu["Selected QEMU host requirements"] --> posix["Threads, clocks and file operations"]
     qemu --> semantic["Mappings, fault handling and process assumptions"]
-    qemu --> library["GLib and QEMU runtime contracts"]
+    qemu --> library["GLib and QEMU runtime interfaces"]
     posix --> zposix["Configured Zephyr POSIX and libc"]
     semantic --> port["Explicit adaptation or exclusion"]
     library --> port
@@ -212,7 +212,7 @@ lifetime are managed by the adapter.
 The applied Ext2 adaptation makes inode synchronization conditional on mount
 writability. This is a filesystem integration requirement beneath POSIX:
 loader close and synchronization paths must respect the mounted medium's
-read-only contract.
+read-only filesystem requirement.
 [Ext2 patch](../patches/zephyr/0007-fs-ext2-preserve-read-only-inode-synchronization.patch).
 
 ### 3.5 Add execution and an explicit command lifecycle
@@ -241,12 +241,13 @@ embedded execution an explicit lifecycle within the surrounding RTOS.
 The [quantitative assessment](posix-assessment.md) preserves the complete
 inventories and sources. The pinned Zephyr tables enumerate 393 unique
 callable names: 289 unqualified `yes`, 53 qualified and 51 unmarked. A separate
-50-contract host audit contains 31 reused APIs, 8 port adaptations, 2 limited
-metadata interfaces and 9 unavailable process/signal extensions. Those nine
-extensions describe capabilities beyond the current profile and are not all
-requirements of the present Linux boot.
+inventory of 50 QEMU-required host POSIX interfaces contains 31 reusable
+Zephyr POSIX APIs, 8 items that need Zephyr-side adaptation, and 11 with
+limited or unavailable behavior. This group contains two incomplete
+`stat`/`fstat` metadata results and nine process/signal interfaces unavailable
+in the selected profile; the nine are not all required for the Linux boot.
 
-![Zephyr documentation and QEMU host-interface inventories, each with its own denominator.](figures/posix-support.svg)
+![Zephyr POSIX catalog and QEMU host POSIX inventory. QEMU items are grouped as 31 reusable, 8 needing Zephyr-side adaptation, and 11 limited or unavailable; the final group contains two stat/fstat metadata limits and nine process/signal interfaces outside the selected profile.](figures/posix-support.svg)
 
 These percentages describe the enumerated interfaces. Some unqualified
 documentation entries have `ENOSYS` implementations, and some unmarked
@@ -269,9 +270,9 @@ configuration. “Adapted” identifies behavior implemented by the port;
 | Process and signal expectations | Zephyr's linked application model; several process-signal APIs return `ENOSYS` | Worker-local exit handling and synthetic guest termination replace the required selected paths |
 | General QEMU I/O and concurrency facilities | Capabilities also depend on the selected QEMU source surface | Migration, hotplug, general coroutine scheduling and multiple vCPUs are excluded from this port |
 
-The table is a workload-specific assessment. It separates a reusable host
-foundation from contracts that require additional implementation or tighter
-scope. A successful port with adapters demonstrates the combined system;
+The table is a workload-specific assessment. It separates reusable host
+interfaces from behavior that needs Zephyr-side adaptation or narrower scope.
+A successful port with adapters demonstrates the combined system;
 claims about unadapted Zephyr POSIX behavior must be supported separately.
 
 ### 4.2 Pthreads and time: a reusable foundation with bounded evidence
@@ -296,7 +297,7 @@ with Zephyr's scheduler. An observed wakeup or advancing timer establishes
 progress in the tested run, with no worst-case latency guarantee implied.
 [Zephyr scheduling](https://docs.zephyrproject.org/latest/kernel/services/scheduling/index.html).
 
-### 4.3 Positioned I/O: a symbol with a narrower descriptor contract
+### 4.3 Positioned I/O: a symbol with narrower descriptor semantics
 
 At the pinned revision, Zephyr's `pread()` and `pwrite()` pass an explicit
 offset into `zvfs_rw()`. The descriptor layer's `supports_pread_pwrite()`
@@ -308,8 +309,8 @@ port even though the API symbols are present.
 [descriptor dispatch](https://github.com/zephyrproject-rtos/zephyr/blob/ba25413e5b6b2661a71db24888f6b89274f1480d/lib/os/zvfs/zvfs_fdtable.c).
 
 The project's adapter saves the current offset, seeks, performs I/O and
-restores the offset. Its contract relies on QEMU owning these descriptors
-on one worker. ELF loading and private file-mapping checks exercise this
+restores the offset. This implementation assumes that QEMU owns these
+descriptors on one worker. ELF loading and private file-mapping checks exercise this
 path. Concurrent positioned access through a shared open-file description
 would require a stronger implementation and separate tests. The evaluation
 therefore credits the port adapter for the supported behavior.
@@ -369,7 +370,7 @@ and detects guest faults through its memory helpers.
 [Pinned signal implementation](https://github.com/zephyrproject-rtos/zephyr/blob/ba25413e5b6b2661a71db24888f6b89274f1480d/subsys/portability/posix/options/signal.c);
 [jump adaptation](../src/qemu/ports/zephyr/os-zephyr.h).
 
-The guest Linux PID, UID and signal contracts are also distinct from host
+The guest Linux PID, UID and signal requirements are also distinct from host
 pthreads and Zephyr task identity. The user adapter assigns a positive
 process ID per launch and a virtual root identity. It reports unsupported
 Linux calls as `ENOSYS`; it does not install guest signal handlers or create
@@ -571,8 +572,9 @@ explicit declarations for four omitted public-header prototypes are recorded
 with its configuration and observations.
 
 The port demonstrates that a selected Zephyr POSIX configuration can supply
-substantial parts of the host environment required by QEMU. The adaptation
-matrix identifies where compatibility depends on additional contracts.
+substantial parts of the host environment required by QEMU. The assessment
+identifies reusable APIs, those needing Zephyr-side adaptation, incomplete
+file-metadata results, and unavailable process/signal functions.
 Regular-file positioned I/O needs appropriate offset semantics; filesystem
 metadata must expose the policy information consumers require; protection
 and signal interfaces need explicit qualification; and application lifetime

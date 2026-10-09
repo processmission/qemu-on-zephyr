@@ -9,17 +9,17 @@ the charts, support matrix and runtime observations.
 
 ## Interface inventories
 
-![Two pie charts showing 289 unqualified, 53 qualified and 51 unmarked Zephyr documentation entries; the reviewed QEMU host contracts comprise 31 reused, 8 adapted, 2 limited and 9 unavailable extension contracts.](figures/posix-support.svg)
+![Zephyr POSIX catalog and QEMU host POSIX inventory. QEMU items are grouped as 31 reusable, 8 needing Zephyr-side adaptation, and 11 limited or unavailable. The final group contains two stat/fstat metadata limits and nine unavailable process/signal interfaces.](figures/posix-support.svg)
 
 | Inventory | Category | Interfaces | Share of its own inventory |
 | --- | --- | ---: | ---: |
 | Zephyr documentation | Unqualified `yes` | 289 | 73.5% |
 | Zephyr documentation | Qualified or undefined behavior | 53 | 13.5% |
 | Zephyr documentation | Unmarked | 51 | 13.0% |
-| QEMU host audit | Reused host API | 31 | 62.0% |
-| QEMU host audit | Port adaptation | 8 | 16.0% |
-| QEMU host audit | Limited metadata | 2 | 4.0% |
-| QEMU host audit | Unavailable extension | 9 | 18.0% |
+| QEMU host POSIX | Reusable from Zephyr POSIX | 31 | 62.0% |
+| QEMU host POSIX | Zephyr-side adaptation | 8 | 16.0% |
+| QEMU host POSIX | Incomplete `stat`/`fstat` metadata | 2 | 4.0% |
+| QEMU host POSIX | Process/signal interfaces unavailable | 9 | 18.0% |
 
 Each slice counts interfaces with equal weight. The percentages describe the
 two explicitly enumerated inventories. They do not measure standards-wide
@@ -52,30 +52,31 @@ every original support cell, group membership and duplicate count. The
 [manifest](data/posix-inventory.json) records exclusions, counts, source
 hashes, package versions and percentage calculation.
 
-### Reviewed QEMU host contracts
+### Reviewed QEMU host POSIX interfaces
 
-The [host audit](data/qemu-posix-audit.csv) is an explicit case inventory.
-It contains 41 retained interfaces or adaptation contracts, plus nine
-process/signal extension contracts. The latter identify capabilities beyond
-the current execution profile; they are not all required for the present
-Linux boot. The inventory excludes most general ISO C routines and does not
-claim to exhaust all QEMU host dependencies. `exit` is retained because its
-process-lifecycle meaning is a specific porting boundary.
+The [host interface audit](data/qemu-posix-audit.csv) contains 50 items:
+31 reusable Zephyr POSIX APIs, 8 Zephyr-side adaptations, 2 incomplete
+`stat`/`fstat` metadata results, and 9 additional process/signal interfaces
+that are unavailable in the selected profile. The nine unavailable items are
+not all required for the present Linux boot. The inventory excludes most
+general ISO C routines and does not claim to exhaust all QEMU host dependencies.
+`exit` is retained because its process-lifecycle behavior is a specific porting
+boundary.
 
 | Treatment | Interfaces |
 | --- | --- |
 | Reused pthread APIs (21) | `pthread_attr_init`, `pthread_attr_destroy`, `pthread_attr_setstack`, `pthread_attr_setschedpolicy`, `pthread_attr_setschedparam`, `pthread_attr_setinheritsched`, `pthread_create`, `pthread_join`, `pthread_self`, `pthread_equal`, `pthread_mutex_init`, `pthread_mutex_destroy`, `pthread_mutex_lock`, `pthread_mutex_trylock`, `pthread_mutex_unlock`, `pthread_cond_init`, `pthread_cond_destroy`, `pthread_cond_signal`, `pthread_cond_broadcast`, `pthread_cond_wait`, `pthread_cond_timedwait` |
 | Other reused APIs (10) | `clock_gettime`, `clock_getres`, `open`, `read`, `write`, `close`, `lseek`, `uname`, `flockfile`, `funlockfile` |
-| Port adaptations (8) | `pread`, `pwrite`, `mmap`, `munmap`, `mprotect`, `sigsetjmp`, `siglongjmp`, `exit` |
-| Limited metadata (2) | `stat`, `fstat` |
-| Unavailable extensions (9) | `sigaction`, `kill`, `pause`, `sigpending`, `sigsuspend`, `sigwait`, `fork`, `execve`, `waitpid` |
+| Zephyr-side adaptations (8) | `pread`, `pwrite`, `mmap`, `munmap`, `mprotect`, `sigsetjmp`, `siglongjmp`, `exit` |
+| Incomplete file metadata (2) | `stat`, `fstat` |
+| Process/signal interfaces unavailable (9) | `sigaction`, `kill`, `pause`, `sigpending`, `sigsuspend`, `sigwait`, `fork`, `execve`, `waitpid` |
 
 The adaptation category describes the selected QEMU behavior. Private
 descriptor seek/I/O/restore does not provide concurrent atomic positional
 I/O. The input mount remains read-only. Guest mapping and protection use
 QEMU metadata and checked helpers; generated-code mappings use kernel APIs.
 The jump adapters handle calls with `savesigs == 0`. Worker-local exit
-handling returns control to the surrounding runtime. These contracts do not
+handling returns control to the surrounding runtime. These adapters do not
 provide complete replacements for every use of the corresponding POSIX APIs.
 
 Reused bindings also have finite evidence. The ledger records source use;

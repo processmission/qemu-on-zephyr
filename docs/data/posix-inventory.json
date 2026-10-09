@@ -3,7 +3,7 @@
   "implementation_revision": "2b1161806afe14fe57dec97234f37aac1ea84e5e",
   "source": "upstream/zephyr/doc/services/portability/posix/option_groups/index.rst",
   "source_sha256": "9ecd75d3de866f866ee3983465ebcff0c62dea82621f56468709d7d8e899d090",
-  "audit_sha256": "8c00c9c288923aecd2f1c46362ba80ada9a8f9cc3ba10ce5a5966b667e26415a",
+  "audit_sha256": "4a6f49cd24b937cab93ed043d448dda377f4b16b6cd3c5c5887ee480b6cacda0",
   "audit_source_sha256": {
     "apps/qemu_linux/src/main.c": "920423766b30cf1e2044d1afd9ac5f6bc171787c9b231cc36a0b46fa32916e13",
     "src/qemu/ports/zephyr/file.c": "20890dca90855b59b81f0478a35d5a6f3a59af57eba35fac146ed7f07432078a",

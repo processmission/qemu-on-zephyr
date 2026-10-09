@@ -1,6 +1,6 @@
 %% The paper evaluates host compatibility and QEMU implementation changes.
 flowchart LR
-    A["Zephyr POSIX<br/>393 catalog entries"] --> B["Audit: 50 contracts<br/>Selected API probes"]
+    A["Zephyr POSIX<br/>393 catalog entries"] --> B["Audit: 50 host POSIX interfaces<br/>Selected API probes"]
     B --> C["Reuse, adapt<br/>or restrict"]
     C --> D["Host compatibility<br/>and port support"]
     E["QEMU source<br/>14 patches + new modules"] --> F["Inspect changed<br/>execution paths"]

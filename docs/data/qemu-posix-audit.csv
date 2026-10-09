@@ -47,5 +47,5 @@ sigpending,unavailable,extension,No process pending-signal query,upstream/zephyr
 sigsuspend,unavailable,extension,No process signal suspension,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS
 sigwait,unavailable,extension,No process signal wait,upstream/zephyr/subsys/portability/posix/options/signal.c,Native function returns ENOSYS
 fork,unavailable,extension,No multi-process model,upstream/zephyr/subsys/portability/posix/options/Kconfig.procN,Process creation is outside the Zephyr host and guest runtime profile
-execve,unavailable,extension,No process image replacement,upstream/zephyr/subsys/portability/posix/options/Kconfig.procN,Explicit ELF launch has its own lifecycle; execve contract not supplied
+execve,unavailable,extension,No process image replacement,upstream/zephyr/subsys/portability/posix/options/Kconfig.procN,Explicit ELF launch has its own lifecycle; execve not supplied
 waitpid,unavailable,extension,No child-process lifecycle,upstream/zephyr/subsys/portability/posix/options/Kconfig.procN,No child processes to reap in the current runtime

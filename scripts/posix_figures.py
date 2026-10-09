@@ -40,10 +40,15 @@ DOCUMENTATION = (
     Category("unmarked", "Unmarked", "#999999", ".."),
 )
 PORT = (
-    Category("reused", "Reused host API", "#0072B2", ""),
-    Category("adapted", "Port adaptation", "#009E73", "//"),
-    Category("limited", "Limited metadata", "#E69F00", ".."),
-    Category("unavailable", "Unavailable extension", "#D55E00", "xx"),
+    Category("reused", "Reusable Zephyr POSIX", "#0072B2", ""),
+    Category("adapted", "Zephyr-side adaptation", "#009E73", "//"),
+    Category("limited", "stat/fstat metadata limits", "#E69F00", ".."),
+    Category("unavailable", "Process/signal interfaces unavailable", "#D55E00", "xx"),
+)
+PORT_FIGURE = (
+    Category("reused", "Reusable Zephyr POSIX", "#0072B2", ""),
+    Category("adapted", "Zephyr-side adaptation", "#009E73", "//"),
+    Category("limited_or_unavailable", "Limited or unavailable", "#D55E00", "xx"),
 )
 
 
@@ -126,12 +131,12 @@ def port_inventory() -> pd.DataFrame:
     if not set(frame["category"]).issubset({category.key for category in PORT}):
         raise ValueError("Unknown host-interface category")
     if set(frame["scope"]) != {"selected", "extension"}:
-        raise ValueError("The audit must identify selected and extension contracts")
+        raise ValueError("The audit must identify selected interfaces and extensions")
     for row in frame.itertuples(index=False):
         if not (ROOT / row.reference).is_file():
             raise ValueError(f"Missing source for {row.api}: {row.reference}")
         if row.scope == "extension" and row.category != "unavailable":
-            raise ValueError(f"Review the expansion-contract classification: {row.api}")
+            raise ValueError(f"Review the extension classification: {row.api}")
     for reference in set(frame["reference"]):
         verify_pinned_source(ROOT / reference)
     return frame
@@ -177,8 +182,11 @@ def render_figures(output: Path, catalog: pd.DataFrame, audit: pd.DataFrame) -> 
         fig.subplots_adjust(left=0.035, right=0.965, top=0.87, bottom=0.26, wspace=0.3)
         draw_pie(axes[0], counts(catalog, DOCUMENTATION), DOCUMENTATION,
                  f"A  Zephyr documentation (n={len(catalog)})")
-        draw_pie(axes[1], counts(audit, PORT), PORT,
-                 f"B  QEMU host audit (n={len(audit)})")
+        audit_plot = audit.copy()
+        audit_plot["category"] = audit_plot["category"].replace(
+            {"limited": "limited_or_unavailable", "unavailable": "limited_or_unavailable"})
+        draw_pie(axes[1], counts(audit_plot, PORT_FIGURE), PORT_FIGURE,
+                 f"B  QEMU host POSIX interfaces (n={len(audit)})")
         fig.text(0.5, 0.98, "POSIX interface inventories", ha="center", va="top",
                  fontsize=12, fontweight="bold")
         fig.text(0.5, 0.01, "Interface counts; each panel has its own denominator. No conformance score.",
