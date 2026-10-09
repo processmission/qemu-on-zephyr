@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+xterm -title 'Linux AArch64 inside Zephyr' -geometry 66x19+24+32 \
+    -fn 9x15 -bg '#101a29' -fg '#dce7f4' \
+    -e /usr/local/bin/demo-terminal &
+echo $! > /run/desktop-xterm.pid
+xclock -digital -update 1 -strftime '%H:%M:%S' -title 'Guest clock' -geometry 240x64+524+398 \
+    -bg '#243650' -fg '#7dd3c7' &
+exec jwm

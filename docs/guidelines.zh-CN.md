@@ -279,6 +279,8 @@ Ctrl-] 返回状态 130；其他状态值表示程序退出码，或 128 加上�
 | --- | --- |
 | `QEMU_MODE=system\|user` | 选择固件的执行模式 |
 | `QEMU_SHELL=0\|1` | 选择自动或手动启动 |
+| `QEMU_DESKTOP=0\|1` | 启用全系统帧缓冲显示和 Alpine 桌面镜像，操作步骤见 [desktop.md](desktop.md) |
+| `QEMU_DISPLAY=none` | 运行桌面配置时关闭本地显示窗口 |
 | `QEMU_ARGS='…'` | system 接受 `-M`/`-machine`、`-accel`、`-cpu`；user 接受 `-accel tcg`、`-cpu`、`-E`、`-strace`、程序及参数 |
 | `ACCEL=zephyr\|tcg` | `QEMU_ARGS` 省略后端时使用的 system 默认值 |
 | `CPU=cortex-a53\|cortex-a57\|cortex-a72` | 省略 `-cpu` 时使用的默认 CPU 型号 |

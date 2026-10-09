@@ -1,0 +1,39 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root DISPLAY=:0 TERM=linux LANG=C
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /run /tmp
+mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /run
+mount -t tmpfs tmpfs /tmp
+chmod 1777 /tmp
+hostname qemu-on-zephyr
+Xorg :0 vt1 -ac -nolisten tcp -noreset -logfile /run/Xorg.log &
+echo $! > /run/desktop-xorg.pid
+attempt=0
+until xsetroot -solid '#182337' 2>/dev/null; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 30 ]; then
+        cat /run/Xorg.log
+        echo 'DESKTOP_FAILED'
+        exec sh </dev/console >/dev/console 2>&1
+    fi
+    sleep 1
+done
+/usr/local/bin/desktop-session &
+echo $! > /run/desktop-jwm.pid
+attempt=0
+until xdotool search --onlyvisible --name 'Linux AArch64 inside Zephyr' windowactivate --sync 2>/dev/null; do
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 90 ]; then
+        echo 'DESKTOP_FAILED'
+        exec sh </dev/console >/dev/console 2>&1
+    fi
+    sleep 1
+done
+echo 'DESKTOP_READY Alpine Linux / Xorg / JWM'
+export PS1='alpine# '
+exec sh </dev/console >/dev/console 2>&1

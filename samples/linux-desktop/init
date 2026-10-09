@@ -1,0 +1,18 @@
+#!/bin/busybox sh
+# SPDX-License-Identifier: Apache-2.0
+set -eu
+/bin/busybox --install -s /bin
+export PATH=/bin
+trap 'echo DESKTOP_FAILED; exec sh </dev/console >/dev/console 2>&1' EXIT
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+modprobe -a loop squashfs overlay simpledrm
+mount -t squashfs -o loop,ro /rootfs.squashfs /lower
+mount -t tmpfs tmpfs /rw
+mkdir /rw/upper /rw/work
+mount -t overlay overlay -o lowerdir=/lower,upperdir=/rw/upper,workdir=/rw/work /newroot
+mkdir -p /newroot/.lower /newroot/.rw
+mount --move /lower /newroot/.lower
+mount --move /rw /newroot/.rw
+exec switch_root /newroot /init

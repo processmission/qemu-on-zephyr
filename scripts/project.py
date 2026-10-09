@@ -209,6 +209,8 @@ def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
         configs = ["native.conf" if accel == "zephyr" else "tcg.conf"]
         if config.mode == "user":
             configs.append("user.conf")
+        if config.desktop:
+            configs.append("desktop.conf")
         if profile == "native-probe":
             configs.append("native-probe.conf")
         else:
@@ -216,6 +218,8 @@ def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
             command.append("-DCONFIG_QEMU_AUTOSTART=" + ("n" if config.manual_shell else "y"))
             startup = (f"qemu-system-aarch64 -M {config.machine} -accel {accel} -cpu {cpu} "
                        "-kernel /images/Image -initrd /images/initramfs.cpio.gz")
+            if config.desktop:
+                startup += ' -append "console=ttyAMA0 rdinit=/init rootfstype=ramfs panic=-1"'
             if config.mode == "user":
                 if not config.manual_shell and not config.program:
                     raise RuntimeError("QEMU_MODE=user requires a program in QEMU_ARGS or QEMU_SHELL=1")
@@ -231,6 +235,8 @@ def build(profile: str = "linux", *, config: QemuConfig | None = None) -> None:
         overlay = "tcg.overlay" if accel == "tcg" else "app.overlay"
         if config.mode == "user":
             overlay += ";user.overlay"
+        if config.desktop:
+            overlay += ";desktop.overlay"
         command.append("-DDTC_OVERLAY_FILE=" + overlay)
         command.append(f'-DCONFIG_QEMU_CPU_MODEL="{cpu}"')
         if config.mode == "system":
@@ -256,6 +262,8 @@ def build_directory(profile: str = "linux", *, config: QemuConfig | None = None)
             profile = "user"
         if profile in ("linux", "user") and config.manual_shell:
             profile += "-shell"
+        if config.desktop:
+            profile += "-desktop"
         if accel != "zephyr" or cpu != "cortex-a53":
             return BUILD / f"{profile}-{accel}-{cpu}"
     return BUILD / profile
@@ -263,10 +271,16 @@ def build_directory(profile: str = "linux", *, config: QemuConfig | None = None)
 
 def prepare_guest_disk(config: QemuConfig, *, create: bool = False) -> Path:
     source = None
+    if (config.desktop and not os.environ.get("GUEST_FILES") and
+            (create or not os.environ.get("GUEST_DISK"))):
+        source = ROOT / "build/desktop-files"
+        if not source.is_dir():
+            raise RuntimeError("Desktop assets are missing; run make desktop-assets")
     if (config.mode == "user" and not os.environ.get("GUEST_FILES") and
             (create or not os.environ.get("GUEST_DISK"))):
         source = prepare_user_programs(ROOT)
-    return prepare_disk(ROOT, create=create, mode=config.mode, default_source=source)
+    return prepare_disk(ROOT, create=create, mode="desktop" if config.desktop else config.mode,
+                        default_source=source)
 
 
 def qemu_command(profile: str = "linux", interactive: bool = False,
@@ -291,7 +305,10 @@ def qemu_command(profile: str = "linux", interactive: bool = False,
     else:
         command += ["-serial", "stdio"]
     if profile == "linux":
-        disk = str(disk_path(ROOT, mode=config.mode)).replace(",", ",,")
+        if config.desktop:
+            command += ["-device", "ramfb"]
+            command[command.index("-display") + 1] = os.environ.get("QEMU_DISPLAY", "default")
+        disk = str(disk_path(ROOT, mode="desktop" if config.desktop else config.mode)).replace(",", ",,")
         command += ["-global", "virtio-mmio.force-legacy=false",
                     "-drive", f"if=none,id=guestfiles,file={disk},format=raw,readonly=on",
                     "-device", "virtio-blk-device,bus=virtio-mmio-bus.4,drive=guestfiles"]

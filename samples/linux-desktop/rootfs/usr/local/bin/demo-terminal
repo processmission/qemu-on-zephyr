@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+printf '\033[1;36mQEMU on Zephyr\033[0m\n\n'
+printf 'Alpine Linux %s | Xorg + JWM\n\n' "$(cat /etc/alpine-release)"
+uname -srmo
+printf '\n'
+awk '/MemTotal:/ {printf "Linux usable memory: %.0f MiB\n", $2 / 1024}
+     /MemAvailable:/ {printf "Available memory:    %.0f MiB\n", $2 / 1024}' /proc/meminfo
+printf '\nFramebuffer: '
+cat /sys/class/graphics/fb0/virtual_size
+printf '\n'
+export PS1='alpine:~# '
+exec /bin/sh

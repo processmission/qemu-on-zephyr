@@ -299,6 +299,8 @@ host scheduling counters are printed only on an explicit status request.
 | --- | --- |
 | `QEMU_MODE=system\|user` | Select the firmware's execution mode |
 | `QEMU_SHELL=0\|1` | Select automatic or manual startup |
+| `QEMU_DESKTOP=0\|1` | Enable the system framebuffer and Alpine desktop assets; see [desktop.md](desktop.md) |
+| `QEMU_DISPLAY=none` | Run the desktop profile without a local display window |
 | `QEMU_ARGS='…'` | System: `-M`/`-machine`, `-accel`, `-cpu`; user: `-accel tcg`, `-cpu`, `-E`, `-strace`, program and arguments |
 | `ACCEL=zephyr\|tcg` | Default system accelerator when omitted from `QEMU_ARGS` |
 | `CPU=cortex-a53\|cortex-a57\|cortex-a72` | Default CPU model when `-cpu` is omitted |

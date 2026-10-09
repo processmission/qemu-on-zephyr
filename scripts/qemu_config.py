@@ -22,8 +22,11 @@ class QemuConfig:
     program: tuple[str, ...] = ()
     user_env: tuple[str, ...] = ()
     strace: bool = False
+    desktop: bool = False
 
     def validate_profile(self, profile: str) -> None:
+        if self.desktop and (profile != "linux" or self.mode != "system"):
+            raise RuntimeError("QEMU_DESKTOP=1 requires the system Linux profile")
         if self.mode == "user" and profile == "native-probe":
             raise RuntimeError("native-probe requires QEMU_MODE=system")
         if profile == "native-probe" and self.accel != "zephyr":
@@ -65,6 +68,11 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
     if shell_mode not in ("0", "1"):
         raise RuntimeError("QEMU_SHELL must be 0 (automatic startup) or 1 (manual shell)")
     mode = env.get("QEMU_MODE", "system")
+    desktop = env.get("QEMU_DESKTOP", "0")
+    if desktop not in ("0", "1"):
+        raise RuntimeError("QEMU_DESKTOP must be 0 or 1")
+    if desktop == "1" and mode != "system":
+        raise RuntimeError("QEMU_DESKTOP=1 requires QEMU_MODE=system")
     if mode not in ("system", "user"):
         raise RuntimeError("QEMU_MODE must be system or user")
     parser = _Parser(
@@ -140,4 +148,5 @@ def load_config(environ: Mapping[str, str] | None = None) -> QemuConfig:
             raise RuntimeError("Use up to eight -E NAME=VALUE options")
     return QemuConfig(machine=machine, accel=accel, cpu=cpu, manual_shell=shell_mode == "1",
                       mode=mode, program=program, user_env=user_env,
-                      strace=options.strace if mode == "user" else False)
+                      strace=options.strace if mode == "user" else False,
+                      desktop=desktop == "1")

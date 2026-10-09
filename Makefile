@@ -8,9 +8,10 @@ CPU ?= cortex-a53
 QEMU_ARGS ?=
 QEMU_SHELL ?= 0
 QEMU_MODE ?= system
+QEMU_DESKTOP ?= 0
 GUEST_FILES ?=
 GUEST_DISK ?=
-export JOBS ACCEL CPU QEMU_ARGS QEMU_SHELL QEMU_MODE GUEST_FILES GUEST_DISK
+export JOBS ACCEL CPU QEMU_ARGS QEMU_SHELL QEMU_MODE QEMU_DESKTOP GUEST_FILES GUEST_DISK
 
 .PHONY: help host-deps setup doctor init update prepare assets guest-disk build run check check-firmware check-user probe native-probe test-glib test-payload test-arch test-tools clean check-env
 help:
@@ -32,6 +33,7 @@ help:
 	@echo 'make test-glib     Host GLib differential regression'
 	@echo 'make test-arch     EL1/EL2, FPU and executor regressions through west twister'
 	@echo 'make test-tools    Workspace setup and configuration tests'
+	@echo 'make desktop       Build and run Alpine Linux with Xorg and JWM (requires Docker)'
 	@echo 'make clean         Delete generated builds, retaining SDK, venv and assets'
 	@echo 'QEMU_ARGS="-M help", "-accel help" or "-cpu help" lists supported selections'
 	@echo 'ACCEL and CPU provide defaults for options omitted from QEMU_ARGS'
@@ -58,3 +60,10 @@ test-glib:
 
 test-tools: | check-env
 	"$(PYTHON)" -m unittest discover -s tests/tools -v
+
+.PHONY: desktop-assets desktop
+desktop-assets: | check-env
+	"$(PYTHON)" scripts/desktop.py
+
+desktop: desktop-assets
+	$(MAKE) run QEMU_DESKTOP=1

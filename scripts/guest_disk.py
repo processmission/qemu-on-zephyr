@@ -29,7 +29,8 @@ def mke2fs_path() -> str:
 
 
 def disk_path(root: Path, *, mode: str = "system") -> Path:
-    name = {"system": "guest-disk.img", "user": "user-disk.img"}[mode]
+    name = {"system": "guest-disk.img", "user": "user-disk.img",
+            "desktop": "desktop-disk.img"}[mode]
     return Path(os.environ.get("GUEST_DISK") or root / "build" / name).expanduser().resolve()
 
 
