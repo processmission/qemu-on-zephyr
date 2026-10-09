@@ -1,4 +1,4 @@
-FROM python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2 AS runtime
+FROM public.ecr.aws/docker/library/python:3.12.13-slim-bookworm@sha256:4766d8b510c428e595d74b9cc5bbb2fae8e26316fffb4adc89908d79aacd58a2 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 \
     HF_HUB_DISABLE_TELEMETRY=1 TOKENIZERS_PARALLELISM=false \
@@ -24,7 +24,7 @@ RUN rm -rf /root/.cache/huggingface /opt/model-source && \
     python -m pip freeze > /opt/python-packages.txt && \
     dpkg-query -W > /opt/debian-packages.txt
 
-FROM alpine:3.23.4@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 AS packer
+FROM public.ecr.aws/docker/library/alpine:3.23.4@sha256:5b10f432ef3da1b8d4c7eb6c487f2f5a8f096bc91145e68878dd4a5019afde11 AS packer
 RUN apk add --no-cache cpio squashfs-tools busybox-static linux-virt kmod zstd \
         build-base meson glib-dev zlib-dev zstd-dev git && \
     git init /unzboot && \
