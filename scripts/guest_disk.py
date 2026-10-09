@@ -56,7 +56,7 @@ def prepare_disk(root: Path, *, create: bool = False, mode: str = "system",
                 shutil.copyfile(root / "downloads/tuxrun-arm64-Image", source / "Image")
                 shutil.copyfile(root / "downloads/generic-arm64-rootfs.cpio.gz",
                                 source / "initramfs.cpio.gz")
-            signature = hashlib.sha256(b"qoz-ext2-v1-4096-128-filetype")
+            signature = hashlib.sha256(b"qoz-ext2-v2-single-group-4096-128-filetype")
             total_size = 0
             for path in sorted(source.rglob("*")):
                 if path.is_symlink():
@@ -66,13 +66,16 @@ def prepare_disk(root: Path, *, create: bool = False, mode: str = "system",
                     total_size += path.stat().st_size
                     with path.open("rb") as contents:
                         signature.update(hashlib.file_digest(contents, "sha256").digest())
+            if total_size > 112 << 20:
+                raise RuntimeError("GUEST_FILES exceeds 112 MiB; Zephyr Ext2 supports a single "
+                                   "128 MiB block group, including filesystem metadata")
             stamp = destination.with_name(destination.name + ".json")
             state = {"path": str(destination), "sha256": signature.hexdigest()}
             if destination.is_file() and stamp.is_file() and json.loads(stamp.read_text()) == state:
                 return destination
             destination.parent.mkdir(parents=True, exist_ok=True)
             temporary = destination.with_name(destination.name + ".part")
-            size_mib = max(64, (total_size * 5 // 4 + (16 << 20)) // (1 << 20) + 1)
+            size_mib = min(128, max(64, (total_size * 5 // 4 + (16 << 20)) // (1 << 20) + 1))
             try:
                 subprocess.run([mke2fs_path(), "-q", "-F", "-t", "ext2", "-b", "4096",
                                 "-I", "128", "-O", "none,filetype", "-d", str(source),

@@ -210,6 +210,9 @@ make run QEMU_MODE=user \
 manually, start with `QEMU_SHELL=1`, inspect `fs ls /images`, and enter
 `qemu-aarch64 /images/myapp arg1` at the Zephyr prompt.
 
+Managed Ext2 disks support up to 112 MiB of file contents within one 128 MiB
+block group. Larger source directories are rejected before disk creation.
+
 ### Activate an updated binary
 
 1. Exit the outer QEMU with **Ctrl-a, then x**.

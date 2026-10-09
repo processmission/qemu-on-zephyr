@@ -102,7 +102,9 @@ qemu-system-aarch64 -kernel /images/firmware.elf
 
 Use an existing Ext2 disk with `make run GUEST_DISK=/absolute/path/to/disk.img`.
 The filesystem begins at sector zero and uses 4096-byte blocks, 128-byte
-inodes and the `filetype` feature. An equivalent host creation command is:
+inodes and the `filetype` feature. The filesystem fits in one block group,
+at most 128 MiB. Managed disk creation limits file contents to 112 MiB so
+metadata also fits in that group. An equivalent host creation command is:
 
 ```sh
 mke2fs -t ext2 -b 4096 -I 128 -O none,filetype -d /path/to/images disk.img 16384

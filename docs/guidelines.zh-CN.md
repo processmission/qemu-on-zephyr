@@ -201,6 +201,9 @@ make run QEMU_MODE=user \
 使用 `QEMU_SHELL=1` 启动，先执行 `fs ls /images`，再输入
 `qemu-aarch64 /images/myapp arg1`。
 
+自动创建的 Ext2 磁盘使用一个 128 MiB 块组，文件内容总量上限为 112 MiB。
+源目录超过上限时，工具会在创建磁盘之前报告错误。
+
 ### 让更新后的程序生效
 
 1. 按 **Ctrl-a，再按 x** 退出外层 QEMU。
