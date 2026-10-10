@@ -59,19 +59,20 @@ Zephyr 命令行，继续执行其他程序。
   <sub>AArch64 TCG · 真实串口输出 · 启动日志 12 倍速 · 程序执行正常速度</sub>
 </p>
 
-### NanoJev CPU 迷宫
+### 运行 NanoJev 大模型推理
 
-NanoJev 在 ZHV 内的 Debian ARM64 桌面中执行本地 CPU 推理。
-完整的 8 × 8 迷宫录制经过 19 次移动尝试、3 次碰撞，最终到达目标。
+NanoJev 在 QEMU on Zephyr 全系统模拟的 Debian ARM64 桌面中执行本地推理。
+16 × 16 迷宫包含 21 个岔路口、12 个独立环路和 2 个死路。
+本次录制经过 65 次移动尝试后抵达目标。
 线性层采用动态 INT8 量化，嵌入层和决策头使用 FP32。
 
 <p align="center">
-  <a href="docs/images/nanojev-cpu.gif"><img src="docs/images/nanojev-cpu.gif" width="800" alt="NanoJev 在 ZHV Linux 桌面中通过 CPU 完整执行迷宫并抵达目标"></a><br>
-  <sub>外层 HVF · 内层 ZHV · 启动和初始化 12 倍速 · 完整迷宫过程保持原速</sub>
+  <a href="docs/images/nanojev-cpu.gif"><img src="docs/images/nanojev-cpu.gif" width="800" alt="NanoJev 在 QEMU on Zephyr 全系统模拟的 Linux 桌面中执行迷宫并抵达目标"></a><br>
+  <sub>QEMU on Zephyr 全系统模拟 · 采用硬件虚拟化加速</sub>
 </p>
 
 <p align="center">
-  <a href="#nanojev-cpu-桌面">启动 NanoJev</a> ·
+  <a href="#nanojev-桌面">启动 NanoJev</a> ·
   <a href="docs/images/nanojev-cpu.mp4">观看完整视频</a>
 </p>
 
@@ -110,9 +111,9 @@ make run
 Linux 自动启动。使用 `make run QEMU_SHELL=1` 可以进入 Zephyr 命令行，
 手动输入启动命令。
 
-### NanoJev CPU 桌面
+### NanoJev 桌面
 
-额外的 Debian ARM64 桌面镜像在 Linux 内执行 NanoJev 迷宫决策，
+Debian ARM64 桌面在 Linux 内执行 NanoJev 迷宫决策，
 使用 ZHV EL2 后端和 3 GiB 客户机内存：
 
 ```sh
@@ -189,7 +190,7 @@ qemu-aarch64 /images/hello arg1
 | [中文使用指南](docs/guidelines.zh-CN.md) · [English guidelines](docs/guidelines.md) | 参数、固件、外部程序与常见问题 |
 | [环境配置](docs/setup.md) | 依赖、SDK、代理和离线配置 |
 | [桌面与动图录制](docs/desktop.md) | Alpine 镜像、桌面控制和 GIF 录制 |
-| [演示文稿](docs/slides/qemu-on-zephyr.pptx) | 12 页 PPT，包含 Alpine、Linux 用户态和 NanoJev CPU 演示 |
+| [演示文稿](docs/slides/qemu-on-zephyr.pptx) | 12 页 PPT，包含 Alpine、Linux 用户态和 NanoJev 演示 |
 | [架构说明](docs/architecture.md) · [执行后端](docs/backends.md) | QEMU 集成、EL2 执行和 TCG |
 | [Linux 用户态接口](docs/user-mode.md) | 系统调用与进程内存 |
 | [英文论文](docs/paper.md) | 移植分析与运行证据 |

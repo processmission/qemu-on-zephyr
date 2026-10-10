@@ -60,19 +60,20 @@ then return to the Zephyr shell for another execution.
   <sub>AArch64 TCG · Actual UART output · Startup at 12× speed · Program execution at normal speed</sub>
 </p>
 
-### NanoJev CPU maze
+### Running NanoJev model inference
 
-NanoJev runs local CPU inference inside a Debian ARM64 desktop with ZHV.
-The complete 8 × 8 recording reaches the goal in 19 attempts with 3 collisions,
-using dynamic INT8 linear layers and FP32 embeddings and decision heads.
+NanoJev runs local inference inside a Debian ARM64 desktop with QEMU on Zephyr full-system emulation.
+The 16 × 16 maze contains 21 junctions, 12 independent loops and 2 dead ends.
+The recorded run reaches the goal after 65 attempted moves. The model uses
+dynamic INT8 linear layers and FP32 embeddings and decision heads.
 
 <p align="center">
-  <a href="docs/images/nanojev-cpu.gif"><img src="docs/images/nanojev-cpu.gif" width="800" alt="Complete NanoJev CPU maze execution inside the ZHV Linux desktop, reaching the goal"></a><br>
-  <sub>Outer HVF · Inner ZHV · Boot and initialization at 12× speed · Complete maze at normal speed</sub>
+  <a href="docs/images/nanojev-cpu.gif"><img src="docs/images/nanojev-cpu.gif" width="800" alt="NanoJev completes the maze inside a Linux desktop with QEMU on Zephyr full-system emulation"></a><br>
+  <sub>QEMU on Zephyr full-system emulation · Hardware virtualization acceleration</sub>
 </p>
 
 <p align="center">
-  <a href="#nanojev-cpu-desktop">Run NanoJev</a> ·
+  <a href="#nanojev-desktop">Run NanoJev</a> ·
   <a href="docs/images/nanojev-cpu.mp4">Watch the complete video</a>
 </p>
 
@@ -111,9 +112,9 @@ make run
 Linux starts automatically. Use `make run QEMU_SHELL=1` to enter the Zephyr
 shell and supply a launch command manually.
 
-### NanoJev CPU desktop
+### NanoJev desktop
 
-Run NanoJev's local maze decisions in a separate Debian ARM64 desktop image,
+Run NanoJev's local maze decisions in a Debian ARM64 desktop,
 using the ZHV EL2 accelerator and 3 GiB guest RAM:
 
 ```sh
@@ -191,7 +192,7 @@ Desktop validation requires Docker and the dependencies in `requirements-demo.tx
 | [Usage guidelines](docs/guidelines.md) · [中文指南](docs/guidelines.zh-CN.md) | Options, firmware, external programs and troubleshooting |
 | [Environment setup](docs/setup.md) | Dependencies, SDK, proxies and offline setup |
 | [Desktop and recordings](docs/desktop.md) | Alpine images, controls and GIF recording |
-| [Presentation](docs/slides/qemu-on-zephyr.pptx) | 12 slides with the Alpine, Linux user-mode and NanoJev CPU demos |
+| [Presentation](docs/slides/qemu-on-zephyr.pptx) | 12 slides with the Alpine, Linux user-mode and NanoJev demos |
 | [Architecture](docs/architecture.md) · [Backends](docs/backends.md) | QEMU integration, EL2 execution and TCG |
 | [Linux user-mode interfaces](docs/user-mode.md) | Supported syscalls and process memory |
 | [Technical paper](docs/paper.md) | Porting analysis and recorded execution evidence |

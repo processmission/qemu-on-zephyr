@@ -22,7 +22,7 @@ use a recent Homebrew QEMU and the native host CPU profile:
 make nanojev CPU=host HOST_ACCEL=hvf QEMU_SYSTEM_AARCH64="$(command -v qemu-system-aarch64)"
 ```
 
-The desktop loads the model once. Its window displays an 8 × 8 generated maze,
+The desktop loads the model once. Its window displays a 16 × 16 generated maze,
 four local safety probabilities, actual movement, collisions and inference
 duration. NanoJev supplies the local judgments. The upstream `EdgeExplorer`
 maintains movement memory and explores edges using those probabilities.
@@ -30,7 +30,7 @@ maintains movement memory and explores edges using those probabilities.
 Use the Linux serial shell to activate and control the window:
 
 ```sh
-xdotool search --onlyvisible --name 'NanoJev CPU' windowactivate --sync
+xdotool search --onlyvisible --name 'NanoJev - QEMU on Zephyr' windowactivate --sync
 xdotool key Right
 xdotool key space
 xdotool key space
@@ -38,7 +38,9 @@ xdotool key r
 ```
 
 `Right` performs one step, `space` toggles continuous execution, and `r` resets
-the maze. The size selector and `F5` / `F8` choose a 5 × 5 or 8 × 8 maze.
+the maze. The size selector and `F5` / `F8` / `F9` choose a 5 × 5, 8 × 8 or
+16 × 16 maze. The default 16 × 16 layout uses NanoJev's `loops` topology with
+seed 17, including 21 junctions, 12 independent loops and 2 dead ends.
 A running prediction finishes before pause or reset takes effect.
 The serial shell remains available during inference. `busybox poweroff -f`
 shuts down Linux and returns to Zephyr.
@@ -112,8 +114,9 @@ or `sudo apt-get install ffmpeg` on Debian/Ubuntu).
 
 The separate `NanoJev CPU desktop` workflow builds the ARM64 image using
 `qemu-user-static` on an x86_64 Ubuntu runner, then runs the ZHV guest with the
-SDK QEMU and a complete 5 × 5 maze. The default local recording
-uses an 8 × 8 maze. The check verifies Zephyr EL2 startup, the Linux pmem device,
+SDK QEMU and a complete 8 × 8 maze with junctions and dead ends. The default
+local recording uses a 16 × 16 maze. The check verifies Zephyr EL2 startup,
+the Linux pmem device,
 real CPU forward passes, finite probabilities, window interaction, goal arrival
 and guest shutdown. It saves the full requests and responses, serial output,
 image provenance and captured frames in `build/nanojev-validation/`.
@@ -128,16 +131,17 @@ identifies the outer QEMU accelerator; the inner guest uses `zephyr`.
 To record a complete maze from an already built image:
 
 ```sh
-.venv/bin/python scripts/check_nanojev.py --no-build --maze-size 8
+.venv/bin/python scripts/check_nanojev.py --no-build --maze-size 16
 ```
 
 For the HVF recording:
 
 ```sh
 HOST_ACCEL=hvf QEMU_SYSTEM_AARCH64="$(command -v qemu-system-aarch64)" \
-    .venv/bin/python scripts/check_nanojev.py --cpu host --maze-size 8
+    .venv/bin/python scripts/check_nanojev.py --cpu host --maze-size 16
 ```
 
-The README recording reaches the goal after 19 attempted moves and 3 collisions.
-Its original video is 228.6 seconds. The edited MP4 and GIF are 205.4 seconds,
-including the 25.2-second boot and initialization segment played at 12× speed.
+The README recording reaches the goal in the 16 × 16 maze after 65 attempted
+moves, 7 collisions and 58 model calls, visiting 14 junctions along the route.
+The published MP4 and GIF present startup, maze execution and the final result
+within 6 seconds.
