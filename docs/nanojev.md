@@ -114,12 +114,12 @@ or `sudo apt-get install ffmpeg` on Debian/Ubuntu).
 
 The separate `NanoJev CPU desktop` workflow builds the ARM64 image using
 `qemu-user-static` on an x86_64 Ubuntu runner, then runs the ZHV guest with the
-SDK QEMU and a complete 8 × 8 maze with junctions and dead ends. The default
-local recording uses a 16 × 16 maze. The check verifies Zephyr EL2 startup,
-the Linux pmem device,
-real CPU forward passes, finite probabilities, window interaction, goal arrival
-and guest shutdown. It saves the full requests and responses, serial output,
-image provenance and captured frames in `build/nanojev-validation/`.
+SDK QEMU and one model-guided step in an 8 × 8 maze. This CI smoke check verifies
+Zephyr EL2 startup, the Linux pmem device, real CPU forward passes, finite
+probabilities, the displayed decision and guest shutdown. The default local
+recording runs a complete 16 × 16 maze and also requires arrival at the goal.
+Both checks save the full requests and responses, serial output, image
+provenance and captured frames in `build/nanojev-validation/`.
 
 Recording first produces `nanojev-original.mp4` at normal speed. Video processing
 accelerates boot and model initialization by 12×, keeps the complete maze
