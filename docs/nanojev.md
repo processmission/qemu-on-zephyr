@@ -110,8 +110,9 @@ make check-nanojev
 Install FFmpeg and FFprobe before recording (`brew install ffmpeg` on macOS,
 or `sudo apt-get install ffmpeg` on Debian/Ubuntu).
 
-The separate `NanoJev CPU desktop` workflow builds the image and runs this check
-on an ARM64 Linux runner with a complete 5 × 5 maze. The default local recording
+The separate `NanoJev CPU desktop` workflow builds the ARM64 image using
+`qemu-user-static` on an x86_64 Ubuntu runner, then runs the ZHV guest with the
+SDK QEMU and a complete 5 × 5 maze. The default local recording
 uses an 8 × 8 maze. The check verifies Zephyr EL2 startup, the Linux pmem device,
 real CPU forward passes, finite probabilities, window interaction, goal arrival
 and guest shutdown. It saves the full requests and responses, serial output,

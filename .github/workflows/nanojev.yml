@@ -34,7 +34,7 @@ permissions:
 jobs:
   nanojev:
     name: ZHV Linux guest and NanoJev CPU inference
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
       JOBS: 4
@@ -44,7 +44,10 @@ jobs:
       - name: Install build and display dependencies
         run: |
           make host-deps
-          sudo apt-get install -y --no-install-recommends qemu-system-arm ipxe-qemu seabios ffmpeg fonts-dejavu-core
+          sudo apt-get install -y --no-install-recommends qemu-user-static binfmt-support ipxe-qemu seabios ffmpeg fonts-dejavu-core
+          sudo systemctl restart systemd-binfmt
+          lscpu
+          free -h
           docker info
       - uses: actions/cache@v6.1.0
         with:
