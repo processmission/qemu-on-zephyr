@@ -14,7 +14,7 @@ from scaled_maze import DIRECTIONS, make_maze
 
 
 class MazeSession:
-    def __init__(self, checkpoint: Path, size: int = 8, seed: int = 17):
+    def __init__(self, checkpoint: Path, size: int = 16, seed: int = 17):
         import torch
         from torch.ao.quantization import quantize_dynamic
         from torch.ao.nn.quantized.dynamic import Linear
@@ -35,7 +35,7 @@ class MazeSession:
         self.reset(size, seed)
 
     def reset(self, size: int, seed: int) -> None:
-        self.initial = make_maze(size, seed, "corridor")
+        self.initial = make_maze(size, seed, "loops")
         self.environment = MazeEnvironment(self.initial)
         self.policy = EdgeExplorer(**self.environment.public_coordinates())
         self.steps: list[dict] = []
@@ -106,7 +106,7 @@ def save_report(path: Path, report: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run NanoJev CPU maze decisions using local model weights.")
     parser.add_argument("--checkpoint", type=Path, default=Path("/opt/nanojev/checkpoint"))
-    parser.add_argument("--size", type=int, default=8)
+    parser.add_argument("--size", type=int, default=16)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--output", type=Path, default=Path("/run/nanojev/report.json"))

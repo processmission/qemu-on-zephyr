@@ -104,8 +104,9 @@ async def validate(no_build: bool, steps: int, timeout: int, output: Path, boot_
         await expect("NANOJEV_READY", timeout)
         ready_details = await asyncio.to_thread(child.readline)
         print("NANOJEV_READY" + ready_details.rstrip(), flush=True)
-        await shell('xdotool search --onlyvisible --name "NanoJev CPU" windowactivate --sync')
-        child.sendline(f"xdotool key F{maze_size}")
+        await shell('xdotool search --onlyvisible --name "NanoJev - QEMU on Zephyr" windowactivate --sync')
+        size_key = {5: "F5", 8: "F8", 16: "F9"}[maze_size]
+        child.sendline(f"xdotool key {size_key}")
         await expect(f"NANOJEV_MAZE_READY size={maze_size}")
         await shell("sleep 1")
         await capture("ready")
@@ -146,12 +147,23 @@ async def validate(no_build: bool, steps: int, timeout: int, output: Path, boot_
                 report["guest_machine"] != "QEMU Zephyr ARM virt profile" or
                 report["model_loads"] != 1 or not report["steps"] or
                 report["initial_state"]["size"] != maze_size or
+                report["initial_state"]["topology"] != "loops" or
                 (steps and len(report["steps"]) != steps) or (not steps and not report["finished"]) or
                 report["quantization"] != "dynamic-int8" or report["quantized_linear_modules"] <= 0 or
                 report["inference_calls"] < 1 or not report["inferences"]):
             raise RuntimeError("Missing real guest CPU inference evidence")
         if report["model"] != json.loads((ROOT / "build/nanojev-files/model.json").read_text()):
             raise RuntimeError("Guest checkpoint identity differs from the image provenance")
+        walls = set(map(tuple, report["initial_state"]["walls"]))
+        passages = {(row, column) for row in range(maze_size) for column in range(maze_size)} - walls
+        degrees = [sum((row + dr, column + dc) in passages
+                       for dr, dc in ((-1, 0), (0, 1), (1, 0), (0, -1))) for row, column in passages]
+        junctions = sum(degree >= 3 for degree in degrees)
+        dead_ends = sum(degree == 1 for degree in degrees)
+        loops = sum(degrees) // 2 - len(passages) + 1
+        if loops < 1 or (maze_size >= 8 and (junctions < 1 or dead_ends < 1)):
+            raise RuntimeError("The recorded maze lacks the expected branches, loops or dead ends")
+        print(f"Maze geometry: {junctions} junctions, {loops} loops, {dead_ends} dead ends", flush=True)
         for inference in report["inferences"]:
             execution = inference["response"]["execution"]
             if (execution["device"] != "cpu" or execution["forward_passes"] <= 0 or
@@ -209,7 +221,7 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=0, help="0 runs the complete maze; positive values limit diagnostics")
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--boot-speed", type=float, default=12)
-    parser.add_argument("--maze-size", type=int, choices=(5, 8), default=8)
+    parser.add_argument("--maze-size", type=int, choices=(5, 8, 16), default=16)
     parser.add_argument("--cpu", choices=CPUS, default="cortex-a53")
     parser.add_argument("--output", type=Path, default=ROOT / "build/nanojev-validation")
     args = parser.parse_args()

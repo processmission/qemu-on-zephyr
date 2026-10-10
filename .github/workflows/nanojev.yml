@@ -38,7 +38,7 @@ jobs:
     timeout-minutes: 180
     env:
       JOBS: 4
-      NANOJEV_MAZE_SIZE: 5
+      NANOJEV_MAZE_SIZE: 8
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Install build and display dependencies

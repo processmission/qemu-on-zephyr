@@ -18,7 +18,7 @@ REPORT = Path("/run/nanojev/report.json")
 class DemoWindow:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("NanoJev CPU - QEMU on Zephyr")
+        self.root.title("NanoJev - QEMU on Zephyr")
         self.root.geometry("984x660+18+34")
         self.root.configure(bg=BACKGROUND)
         self.events: Queue = Queue()
@@ -33,17 +33,18 @@ class DemoWindow:
         for label, command in (("Run / Pause", self.toggle), ("One step", self.step), ("Reset", self.reset)):
             tk.Button(controls, text=label, command=command, bg="#193242", fg=FOREGROUND,
                       activebackground=MINT, font=("DejaVu Sans", 11), padx=16, pady=5).pack(side="left", padx=(0, 12))
-        self.size = tk.StringVar(value="8")
-        selector = tk.OptionMenu(controls, self.size, "5", "8", command=self.change_size)
+        self.size = tk.StringVar(value="16")
+        selector = tk.OptionMenu(controls, self.size, "5", "8", "16", command=self.change_size)
         selector.configure(bg="#193242", fg=FOREGROUND, highlightthickness=0, font=("DejaVu Sans", 11))
         selector.pack(side="left", padx=12)
-        tk.Label(controls, text="Local CPU inference", bg=BACKGROUND, fg=MUTED,
+        tk.Label(controls, text="Hardware virtualization", bg=BACKGROUND, fg=MUTED,
                  font=("DejaVu Sans", 10)).pack(side="right")
         self.root.bind("<space>", lambda event: self.toggle())
         self.root.bind("<Right>", lambda event: self.step())
         self.root.bind("r", lambda event: self.reset())
         self.root.bind("<F5>", lambda event: self.change_size("5"))
         self.root.bind("<F8>", lambda event: self.change_size("8"))
+        self.root.bind("<F9>", lambda event: self.change_size("16"))
         self.draw(None, "Loading Qwen3-0.6B and decision heads...")
         threading.Thread(target=self.worker, daemon=True).start()
         self.root.after(100, self.poll)
@@ -87,7 +88,7 @@ class DemoWindow:
                 if command.startswith("size:"):
                     session.reset(int(command.removeprefix("size:")), 17)
                 elif not session.report()["finished"]:
-                    self.events.put((session.report(), "Computing safety probabilities on CPU..."))
+                    self.events.put((session.report(), "Computing safety probabilities..."))
                     session.step()
                 report = session.report()
                 save_report(REPORT, report)
@@ -108,11 +109,11 @@ class DemoWindow:
         canvas.delete("all")
         canvas.create_text(24, 27, anchor="w", text="NanoJev", fill=FOREGROUND,
                            font=("DejaVu Sans", 26, "bold"))
-        canvas.create_text(25, 61, anchor="w", text="CPU DECISION MODEL  /  LINUX DESKTOP", fill=MUTED,
+        canvas.create_text(25, 61, anchor="w", text="LOCAL MODEL INFERENCE  /  LINUX DESKTOP", fill=MUTED,
                            font=("DejaVu Sans", 10))
         canvas.create_text(650, 29, anchor="w", text="QEMU on Zephyr", fill=MINT,
                            font=("DejaVu Sans", 16, "bold"))
-        canvas.create_text(650, 58, anchor="w", text="Full-system guest  /  ZHV EL2", fill=MUTED,
+        canvas.create_text(650, 58, anchor="w", text="Full-system emulation", fill=MUTED,
                            font=("DejaVu Sans", 11))
         canvas.create_line(24, 83, 956, 83, fill="#294050")
         canvas.create_text(650, 123, anchor="w", text="Live safety probabilities", fill=FOREGROUND,
@@ -136,7 +137,7 @@ class DemoWindow:
                 x, y = origin_x + (col + .5) * cell, origin_y + (row + .5) * cell
                 canvas.create_oval(x - cell * radius, y - cell * radius, x + cell * radius, y + cell * radius,
                                    fill=color, outline=color)
-            canvas.create_text(72, 104, anchor="w", text=f"{initial['size']} x {initial['size']} maze / seed {initial['seed']}",
+            canvas.create_text(72, 104, anchor="w", text=f"{initial['size']} x {initial['size']} maze / loops / seed {initial['seed']}",
                                fill=MUTED, font=("DejaVu Sans", 11))
             for index, direction in enumerate(("north", "east", "south", "west")):
                 y = 170 + index * 45
@@ -147,7 +148,7 @@ class DemoWindow:
                     canvas.create_line(718, y, 718 + 164 * probability, y, fill=MINT, width=7)
                     canvas.create_text(950, y, anchor="e", text=f"{probability:.1%}", fill=MINT, font=("DejaVu Sans", 10))
             facts = [f"Steps                 {len(report['steps'])}", f"Collisions            {report['collisions']}",
-                     f"Model calls          {report['inference_calls']}", "Device                CPU / INT8 + FP32"]
+                     f"Model calls          {report['inference_calls']}", "Quantization        INT8 + FP32"]
             if report["inferences"]:
                 facts.append(f"Last inference      {report['inferences'][-1]['seconds']:.1f} s")
             for index, text in enumerate(facts):
